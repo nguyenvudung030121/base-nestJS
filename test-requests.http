@@ -1,0 +1,51 @@
+# Khai báo biến token để dùng chung cho các request yêu cầu đăng nhập
+# Sau khi Đăng ký hoặc Đăng nhập, hãy copy accessToken dán vào đây:
+@token = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjIsImVtYWlsIjoidGVzdHVzZXJAZXhhbXBsZS5jb20iLCJpYXQiOjE3Nzk5NTkwMjcsImV4cCI6MTc3OTk2MjYyN30.vHN1V9Yngp5Nokcl6kAIvz6JAgtxT8dic1qdIlKO6eA
+
+### 1. Test Hello World
+GET http://localhost:3000
+
+###
+
+### 2. Lấy danh sách hóa đơn (Invoices)
+# Yêu cầu truyền Token trong Header
+GET http://localhost:3000/invoices
+Authorization: Bearer {{token}}
+
+###
+
+### 3. Tạo hóa đơn mới (Invoices)
+# Yêu cầu truyền Token trong Header (userId tự động được lấy từ Token)
+POST http://localhost:3000/invoices
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "title": "Hóa đơn mua quạt",
+  "amount": 3000
+}
+
+###
+
+### 4. Đăng ký tài khoản mới (Auth)
+POST http://localhost:3000/auth/register
+Content-Type: application/json
+
+{
+  "email": "testuser@example.com",
+  "password": "mypassword123",
+  "name": "Nguyen Van A"
+}
+
+###
+
+### 5. Đăng nhập (Auth)
+POST http://localhost:3000/auth/login
+Content-Type: application/json
+
+{
+  "email": "testuser@example.com",
+  "password": "mypassword123"
+}
+
+
