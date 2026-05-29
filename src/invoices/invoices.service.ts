@@ -13,6 +13,7 @@ export class InvoicesService {
       data: {
         title: dto.title,
         amount: dto.amount,
+        imageUrl: dto.imageUrl,
         userId: userId, // Nối với User lấy từ token
       },
     });

@@ -1,6 +1,6 @@
 # Khai báo biến token để dùng chung cho các request yêu cầu đăng nhập
 # Sau khi Đăng ký hoặc Đăng nhập, hãy copy accessToken dán vào đây:
-@token = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjIsImVtYWlsIjoidGVzdHVzZXJAZXhhbXBsZS5jb20iLCJpYXQiOjE3Nzk5NTkwMjcsImV4cCI6MTc3OTk2MjYyN30.vHN1V9Yngp5Nokcl6kAIvz6JAgtxT8dic1qdIlKO6eA
+@token = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjIsImVtYWlsIjoidGVzdHVzZXJAZXhhbXBsZS5jb20iLCJpYXQiOjE3ODAwMjE1MjcsImV4cCI6MTc4MDAyNTEyN30.y7EBfR_xfNrjn8PsYFQb0vKZM_KbMbC8P7Zvi6naYj8
 
 ### 1. Test Hello World
 GET http://localhost:3000

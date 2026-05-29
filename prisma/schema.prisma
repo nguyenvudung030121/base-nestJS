@@ -27,10 +27,10 @@ model Invoice {
   id        Int      @id @default(autoincrement())
   title     String
   amount    Float
-  status    String   @default("UNPAID") // Trạng thái mặc định
+  status    String   @default("UNPAID")
+  imageUrl  String? // Thêm dấu ? nghĩa là cột này có thể null (không bắt buộc)
   createdAt DateTime @default(now())
 
-  // Thiết lập mối quan hệ nối sang bảng User (Foreign Key)
   userId Int
   user   User @relation(fields: [userId], references: [id])
 }

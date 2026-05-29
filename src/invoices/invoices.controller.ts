@@ -1,6 +1,9 @@
-import { Controller, Get, Post, Body, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards, Req, UseInterceptors, UploadedFile } from '@nestjs/common';
 import { Request } from 'express';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { diskStorage } from 'multer'; // Để lưu ảnh
+import { extname } from 'path'; // Để lấy đuôi file
+import { ApiBearerAuth, ApiTags, ApiConsumes, ApiBody, ApiOperation } from '@nestjs/swagger';
 import { InvoicesService } from './invoices.service';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth/jwt-auth.guard'; // Import Guard
@@ -29,4 +32,49 @@ export class InvoicesController {
   async findAll() {
     return this.invoicesService.findAll();
   }
+
+
+@Post('upload')
+  @ApiOperation({ summary: 'Upload ảnh hóa đơn' })
+  @ApiConsumes('multipart/form-data') // Báo cho Swagger biết API này nhận File
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary', // Hiển thị nút chọn file trên Swagger
+        },
+      },
+    },
+  })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: './uploads', // Thư mục lưu file
+        filename: (req, file, cb) => {
+          // Tạo tên file ngẫu nhiên để không bị trùng (ví dụ: 1691234567-3453.jpg)
+          const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+          const ext = extname(file.originalname);
+          cb(null, `${uniqueSuffix}${ext}`);
+        },
+      }),
+    }),
+  )
+  uploadInvoiceImage(@UploadedFile() file: Express.Multer.File) {
+    if (!file) {
+      return { success: false, message: 'Vui lòng chọn một file ảnh!' };
+    }
+    
+    // Trả về đường dẫn của file vừa lưu
+    return {
+      success: true,
+      message: 'Upload thành công!',
+      data: {
+        imageUrl: file.path, 
+      },
+      statusCode: 200,
+    };
+  }
+
 }

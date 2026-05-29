@@ -9,7 +9,7 @@ import { AuthService } from './auth.service';
     JwtModule.register({
       global: true,
       secret: 'CHIA_KHOA_BIMAT_CUA_BAN', // Thực tế nên để ở file .env
-      signOptions: { expiresIn: '1h' },  // Token sống được 1 tiếng
+      signOptions: { expiresIn: '3h' },  // Token sống được 1 tiếng
     }),
   ],
   controllers: [AuthController],
