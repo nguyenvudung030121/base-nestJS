@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, UseGuards, Req, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards, Req, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
 import { Request } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer'; // Để lưu ảnh
@@ -63,18 +63,11 @@ export class InvoicesController {
   )
   uploadInvoiceImage(@UploadedFile() file: Express.Multer.File) {
     if (!file) {
-      return { success: false, message: 'Vui lòng chọn một file ảnh!' };
+      throw new BadRequestException('Vui lòng chọn một file ảnh!');
     }
     
-    // Trả về đường dẫn của file vừa lưu
-    return {
-      success: true,
-      message: 'Upload thành công!',
-      data: {
-        imageUrl: file.path, 
-      },
-      statusCode: 200,
-    };
+    // Trả về đường dẫn của file vừa lưu — Interceptor sẽ tự bọc
+    return { imageUrl: file.path };
   }
 
 }

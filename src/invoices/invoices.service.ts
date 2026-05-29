@@ -17,7 +17,7 @@ export class InvoicesService {
         userId: userId, // Nối với User lấy từ token
       },
     });
-    return { success: true, data: newInvoice, message: 'Create invoice successfully', statusCode: 200 };
+    return newInvoice;
   }
 
   // GET: Lấy toàn bộ hóa đơn
@@ -25,6 +25,6 @@ export class InvoicesService {
     const invoices = await this.prisma.invoice.findMany({
       include: { user: true } // Lấy kèm luôn thông tin của User sở hữu hóa đơn này
     });
-    return { success: true, data: invoices, message: 'Get invoices successfully', statusCode: 200 };
+    return invoices;
   }
 }

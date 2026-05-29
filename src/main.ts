@@ -5,6 +5,8 @@ import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
+import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
+import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
@@ -12,7 +14,13 @@ async function bootstrap() {
   // 1. Kích hoạt Validation toàn cục
   app.useGlobalPipes(new ValidationPipe());
 
-  // 2. Cho phép truy cập thư mục 'uploads'
+  // 2. Kích hoạt Global Exception Filter (Bắt lỗi)
+  app.useGlobalFilters(new GlobalExceptionFilter());
+
+  // 3. Kích hoạt Transform Interceptor (Bọc response thành công)
+  app.useGlobalInterceptors(new TransformInterceptor());
+
+  // 3. Cho phép truy cập thư mục 'uploads'
   app.useStaticAssets(join(process.cwd(), 'uploads'), {
     prefix: '/uploads', // Đã xóa dấu gạch chéo (/) ở cuối
   });

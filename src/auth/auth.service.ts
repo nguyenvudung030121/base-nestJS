@@ -34,17 +34,8 @@ export class AuthService {
     const payload = { sub: newUser.id, email: newUser.email };
     const token = await this.jwtService.signAsync(payload);
 
-    // 5. Trả về format y hệt như API Login
-    return {
-      success: true,
-      data: { 
-        id: newUser.id, 
-        name: newUser.name, 
-        accessToken: token 
-      },
-      message: 'Create user successfully',
-      statusCode: 201
-    };
+    // 5. Trả về data thô — Interceptor sẽ tự bọc thành format chuẩn
+    return { id: newUser.id, name: newUser.name, accessToken: token };
   }
 
   async login(dto: LoginDto) {
@@ -60,11 +51,7 @@ export class AuthService {
     const payload = { sub: user.id, email: user.email };
     const token = await this.jwtService.signAsync(payload);
 
-    return {
-      success: true,
-      data: { id: user.id, name: user.name, accessToken: token },
-      message: 'Create user successfully',
-      statusCode: 201
-    };
+    // 4. Trả về data thô — Interceptor sẽ tự bọc thành format chuẩn
+    return { id: user.id, name: user.name, accessToken: token };
   }
 }
