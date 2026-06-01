@@ -1,6 +1,6 @@
 # Hướng Dẫn Phát Triển & Tài Liệu Kỹ Thuật (NestJS Backend API)
 
-Tài liệu này cung cấp cái nhìn chi tiết về cấu trúc thư mục, cơ chế hoạt động, cơ sở dữ liệu và cách sử dụng ứng dụng backend quản lý hóa đơn (Invoice App) được xây dựng trên framework **NestJS**, kết hợp với **Prisma ORM**, **PostgreSQL** và **Swagger API Docs**.
+Tài liệu này cung cấp cái nhìn chi tiết về cấu trúc thư mục, cơ chế hoạt động, cơ sở dữ liệu và cách sử dụng ứng dụng backend quản lý hóa đơn (Invoice App) được xây dựng trên framework **NestJS**, kết hợp với **Prisma ORM**, **PostgreSQL**, **Swagger API Docs**, **@nestjs/config** và **@nestjs/throttler**.
 
 ---
 
@@ -10,8 +10,8 @@ Dự án được cấu trúc theo các module đặc trưng của NestJS giúp 
 
 ```text
 src/
-├── main.ts                   # Điểm khởi chạy ứng dụng (Pipes, Filter, Interceptor, Swagger)
-├── app.module.ts             # Module gốc (Root Module) kết nối tất cả các modules khác
+├── main.ts                   # Điểm khởi chạy ứng dụng (ConfigService, Pipes, Filter, Interceptor, Swagger)
+├── app.module.ts             # Module gốc (ConfigModule, ThrottlerModule, Global Guard, các feature modules)
 ├── app.controller.ts         # Controller mặc định (Hello World)
 ├── app.service.ts            # Service mặc định
 │
@@ -31,7 +31,7 @@ src/
 │   └── prisma.service.ts     # Kế thừa PrismaClient để truy vấn dữ liệu
 │
 ├── auth/                     # Module Xác thực (Authentication)
-│   ├── auth.module.ts        # Đăng ký JWT, Controllers, Services của Auth
+│   ├── auth.module.ts        # Đăng ký JWT bằng ConfigService, export JwtModule/JwtAuthGuard
 │   ├── auth.controller.ts    # Định nghĩa endpoint POST /auth/register, POST /auth/login
 │   ├── auth.service.ts       # Logic xử lý đăng ký (hash mật khẩu), đăng nhập (sinh JWT)
 │   ├── dto/                  # Đối tượng truyền dữ liệu (Data Transfer Objects)
@@ -39,10 +39,10 @@ src/
 │   │   └── login.dto.ts      # Ràng buộc dữ liệu khi Đăng nhập
 │   └── guards/               # Chốt chặn bảo vệ API (Route Guards)
 │       └── jwt-auth/
-│           └── jwt-auth.guard.ts # Xác thực JWT Token gửi lên từ Client
+│           └── jwt-auth.guard.ts # Xác thực JWT Token gửi lên từ Client bằng JWT_SECRET
 │
 └── invoices/                 # Module Quản lý Hóa Đơn (Invoices)
-    ├── invoices.module.ts    # Khai báo Invoices module
+    ├── invoices.module.ts    # Khai báo Invoices module, import AuthModule để dùng JwtAuthGuard
     ├── invoices.controller.ts# Định nghĩa endpoints GET, POST /invoices, POST /invoices/upload
     ├── invoices.service.ts   # Xử lý logic nghiệp vụ (CRUD + phân trang)
     └── dto/
@@ -175,13 +175,14 @@ Khi Client gọi một API cần xác thực (ví dụ: tạo hóa đơn), reque
 
 ```mermaid
 graph TD
-    Client["Client / Mobile"] -->|"1. Gửi request kèm Bearer Token"| Pipe["ValidationPipe (ép kiểu + validate DTO)"]
-    Pipe -->|"2. Khớp Route"| Guard["JwtAuthGuard"]
-    Guard -->|"3. Giải mã Token, gắn user vào request"| Controller["Controller"]
-    Controller -->|"4. Gọi Service với data đã validate"| Service["Service"]
-    Service -->|"5. Truy vấn DB"| Prisma["PrismaService"]
-    Prisma -->|"6. Trả data thô"| Interceptor["TransformInterceptor (bọc response chuẩn)"]
-    Interceptor -->|"7. JSON chuẩn hóa"| Client
+    Client["Client / Mobile"] -->|"1. Gửi request kèm Bearer Token"| Throttle["ThrottlerGuard (10 requests/phút)"]
+    Throttle -->|"2. Qua giới hạn request"| Guard["JwtAuthGuard"]
+    Guard -->|"3. Giải mã Token, gắn user vào request"| Pipe["ValidationPipe (ép kiểu + validate DTO)"]
+    Pipe -->|"4. Data hợp lệ"| Controller["Controller"]
+    Controller -->|"5. Gọi Service với data đã validate"| Service["Service"]
+    Service -->|"6. Truy vấn DB"| Prisma["PrismaService"]
+    Prisma -->|"7. Trả data thô"| Interceptor["TransformInterceptor (bọc response chuẩn)"]
+    Interceptor -->|"8. JSON chuẩn hóa"| Client
 
     Service -->|"Nếu lỗi nghiệp vụ: throw HttpException"| Filter["GlobalExceptionFilter"]
     Filter -->|"JSON lỗi chuẩn hóa"| Client
@@ -198,25 +199,66 @@ graph TD
    * Trả về mã JWT Token chứa thông tin mã hóa (`userId` và `email`) nếu hợp lệ.
 3. **Bảo vệ API (`JwtAuthGuard`)**:
    * Trích xuất token từ header `Authorization: Bearer <token>`.
-   * Giải mã token bằng chìa khóa bí mật (`secret`). Nếu giải mã thành công, thông tin user được đưa vào đối tượng Request để sử dụng ở Controller.
+   * Giải mã token bằng `JWT_SECRET` lấy từ `.env` thông qua `ConfigService`. Nếu giải mã thành công, thông tin user được đưa vào đối tượng Request để sử dụng ở Controller.
+   * `AuthModule` export `JwtModule` và `JwtAuthGuard`; các module cần dùng guard, ví dụ `InvoicesModule`, phải import `AuthModule` để NestJS resolve được dependency `JwtService`.
+
+### 5.3. Cơ Chế Rate Limiting (Anti-Spam)
+Toàn bộ API đang được bảo vệ bởi `@nestjs/throttler` ở cấp global guard trong `AppModule`:
+
+```typescript
+ThrottlerModule.forRoot([{ ttl: 60000, limit: 10 }])
+```
+
+Ý nghĩa:
+* `ttl: 60000`: cửa sổ thời gian 60.000 milliseconds, tương đương 1 phút.
+* `limit: 10`: mỗi client chỉ được gọi tối đa 10 requests trong 1 phút.
+* Nếu vượt quá giới hạn, server trả lỗi `429 Too Many Requests`.
+
+Khi cần bỏ qua rate limit cho một endpoint cụ thể:
+```typescript
+import { SkipThrottle } from '@nestjs/throttler';
+
+@SkipThrottle()
+@Get('health')
+healthCheck() {
+  return { ok: true };
+}
+```
+
+Khi cần siết chặt một endpoint, ví dụ API upload ảnh chỉ cho gọi 3 lần/phút:
+```typescript
+import { Throttle } from '@nestjs/throttler';
+
+@Throttle({ default: { ttl: 60000, limit: 3 } })
+@Post('upload')
+uploadInvoiceImage() {
+  // upload logic
+}
+```
 
 ---
 
 ## 6. Hướng Dẫn Cấu Hình & Chạy Dự Án (Getting Started)
 
-### 4.1. Chuẩn Bị Môi Trường
+### 6.1. Chuẩn Bị Môi Trường
 * Cài đặt **Node.js** (Khuyên dùng phiên bản LTS).
 * Khởi động cơ sở dữ liệu **PostgreSQL** (chạy local hoặc thông qua Docker).
   * Nếu dùng Docker, bạn có thể chạy container có sẵn bằng lệnh: `docker start nest-postgres` (hoặc khởi tạo container PostgreSQL mới trên cổng `5432`).
 
-### 4.2. Cấu Hình Biến Môi Trường
-Tạo file `.env` ở thư mục gốc [base-backend](file:///Users/Shared/dung_data/BE/base-nestjs/base-backend) (nếu chưa có) và cập nhật đường dẫn kết nối Database:
+### 6.2. Cấu Hình Biến Môi Trường
+Tạo file `.env` ở thư mục gốc [base-backend](file:///Users/Shared/dung_data/BE/base-nestjs/base-backend) (nếu chưa có) và cập nhật các biến môi trường:
 ```env
-DATABASE_URL="postgresql://myuser:mypassword@localhost:5432/invoice_db?schema=public"
 PORT=3000
+JWT_SECRET="một_chuỗi_bí_mật_siêu_dài_và_khó_đoán"
+DATABASE_URL="postgresql://myuser:mypassword@localhost:5432/invoice_db?schema=public"
 ```
 
-### 4.3. Các Lệnh Chạy Dự Án
+Lưu ý:
+* `PORT` được đọc trong `main.ts` bằng `ConfigService`; nếu không có giá trị, server fallback về `3000`.
+* `JWT_SECRET` được dùng để ký và xác minh JWT. Không commit `.env` lên Git.
+* `DATABASE_URL` phải trỏ đúng PostgreSQL đang chạy local hoặc remote.
+
+### 6.3. Các Lệnh Chạy Dự Án
 
 * **Cài đặt thư viện dependencies:**
   ```bash
@@ -234,6 +276,13 @@ PORT=3000
   npm run start:dev
   ```
 
+* **Expose local server qua ngrok:**
+  Backend cần listen ở port `3000`, sau đó chạy:
+  ```bash
+  ngrok http 3000
+  ```
+  Nếu gặp lỗi `EADDRINUSE: address already in use :::3000`, nghĩa là đã có process khác đang chiếm port `3000`. Hãy dừng process backend cũ hoặc đổi `PORT` trong `.env`.
+
 * **Mở giao diện quản trị Database trực quan (Prisma Studio):**
   ```bash
   npx prisma studio
@@ -243,16 +292,37 @@ PORT=3000
 
 ## 7. Tài Liệu Hướng Dẫn Sử Dụng API
 
-### 5.1. Swagger UI Docs (Khuyên dùng)
+### 7.1. Swagger UI Docs (Khuyên dùng)
 Dự án đã tích hợp sẵn Swagger. Khi server đang chạy ở local, bạn có thể truy cập:
 👉 **[http://localhost:3000/docs](http://localhost:3000/docs)** để xem tài liệu chi tiết và test trực tiếp các API.
 
 > [!TIP]
 > Để test các API Invoice, bạn hãy chạy API Đăng nhập/Đăng ký trên Swagger trước -> Copy chuỗi `accessToken` -> Bấm nút **Authorize** ở góc phải phía trên giao diện Swagger -> Dán token vào và lưu lại.
 
-### 5.2. File REST Client (.http)
+### 7.2. File REST Client (.http)
 Bạn cũng có thể test nhanh thông qua file [test-requests.http](file:///Users/Shared/dung_data/BE/base-nestjs/base-backend/test-requests.http) nếu sử dụng công cụ mở rộng REST Client trong VS Code.
 Hãy làm theo thứ tự:
 1. Gửi request đăng nhập hoặc đăng ký.
 2. Sao chép `accessToken` ở kết quả trả về.
 3. Thay thế giá trị của biến `@token` ở đầu file và tiến hành gọi các API Invoice.
+
+---
+
+## 8. Ghi Chú Thay Đổi Gần Đây
+
+### 8.1. Commit gần nhất đã kiểm tra
+Commit gần nhất:
+```text
+335e5cc feat: export JwtAuthGuard and import AuthModule in InvoicesModule
+```
+
+Ý nghĩa kỹ thuật:
+* `AuthModule` export `JwtModule` và `JwtAuthGuard`.
+* `InvoicesModule` import `AuthModule` để `JwtAuthGuard` resolve được `JwtService` khi controller dùng `@UseGuards(JwtAuthGuard)`.
+* Cách wiring này tránh lỗi runtime dạng `Nest can't resolve dependencies of the JwtAuthGuard (?, ConfigService)`.
+
+### 8.2. Thay đổi đang bổ sung sau commit gần nhất
+Các thay đổi hiện tại liên quan đến rate limiting:
+* Thêm dependency `@nestjs/throttler`.
+* Cấu hình `ThrottlerModule.forRoot([{ ttl: 60000, limit: 10 }])` trong `AppModule`.
+* Đăng ký `ThrottlerGuard` làm global guard bằng token `APP_GUARD`.
