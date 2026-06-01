@@ -6,7 +6,7 @@ import { PrismaService } from '../prisma/prisma.service';
 export class CronService {
   constructor(private readonly prisma: PrismaService) {}
 
-  @Cron(CronExpression.EVERY_30_SECONDS)
+  @Cron(CronExpression.EVERY_HOUR)
   async handleOverdueInvoices() {
     const unpaidInvoices = await this.prisma.invoice.findMany({
       where: { status: 'UNPAID' },
