@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, UseGuards, Req, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, UseGuards, Req, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
 import { Request } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer'; // Để lưu ảnh
@@ -6,6 +6,7 @@ import { extname } from 'path'; // Để lấy đuôi file
 import { ApiBearerAuth, ApiTags, ApiConsumes, ApiBody, ApiOperation } from '@nestjs/swagger';
 import { InvoicesService } from './invoices.service';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
+import { GetInvoicesDto } from './dto/get-invoices.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth/jwt-auth.guard'; // Import Guard
 
 @ApiTags('Invoices')
@@ -29,12 +30,16 @@ export class InvoicesController {
   }
 
   @Get()
-  async findAll() {
-    return this.invoicesService.findAll();
+  @ApiOperation({ summary: 'Lấy danh sách hóa đơn có phân trang' })
+  async findAll(
+    @Query() dto: GetInvoicesDto,
+    @Req() request: Request,
+  ) {
+    const userId = request['user'].sub;
+    return this.invoicesService.findAll(dto, userId);
   }
 
-
-@Post('upload')
+  @Post('upload')
   @ApiOperation({ summary: 'Upload ảnh hóa đơn' })
   @ApiConsumes('multipart/form-data') // Báo cho Swagger biết API này nhận File
   @ApiBody({

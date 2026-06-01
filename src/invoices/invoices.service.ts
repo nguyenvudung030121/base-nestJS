@@ -1,6 +1,10 @@
+// src/invoices/invoices.service.ts
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
+import { GetInvoicesDto } from './dto/get-invoices.dto';
+import { PageDto, PageMetaDto } from '../common/pagination';
+import { Prisma } from '../../generated/prisma/client';
 
 @Injectable()
 export class InvoicesService {
@@ -20,11 +24,30 @@ export class InvoicesService {
     return newInvoice;
   }
 
-  // GET: Lấy toàn bộ hóa đơn
-  async findAll() {
-    const invoices = await this.prisma.invoice.findMany({
-      include: { user: true } // Lấy kèm luôn thông tin của User sở hữu hóa đơn này
-    });
-    return invoices;
+  // GET: Lấy hóa đơn có phân trang + lọc
+  async findAll(dto: GetInvoicesDto, userId: number) {
+    // 1. Xây dựng điều kiện lọc
+    const whereCondition: Prisma.InvoiceWhereInput = {
+      userId, // Chỉ lấy hóa đơn của user hiện tại
+      ...(dto.status && { status: dto.status }), // Lọc theo status nếu có
+    };
+
+    // 2. Gọi đồng thời findMany + count bằng Promise.all (tối ưu performance)
+    const [items, itemCount] = await Promise.all([
+      this.prisma.invoice.findMany({
+        where: whereCondition,
+        skip: dto.skip,
+        take: dto.limit,
+        orderBy: { createdAt: 'desc' }, // Mới nhất lên đầu
+        include: { user: true }, // Lấy kèm luôn thông tin User
+      }),
+      this.prisma.invoice.count({
+        where: whereCondition,
+      }),
+    ]);
+
+    // 3. Tính toán meta pagination và trả về
+    const meta = new PageMetaDto({ pageOptionsDto: dto, itemCount });
+    return new PageDto(items, meta);
   }
 }

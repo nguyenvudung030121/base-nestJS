@@ -31,11 +31,7 @@ export class AuthService {
     });
 
     // 4. AUTO-LOGIN: Tạo ngay JWT Token cho user vừa đăng ký
-    const payload = { sub: newUser.id, email: newUser.email };
-    const token = await this.jwtService.signAsync(payload);
-
-    // 5. Trả về data thô — Interceptor sẽ tự bọc thành format chuẩn
-    return { id: newUser.id, name: newUser.name, accessToken: token };
+    return this.generateAuthResponse(newUser);
   }
 
   async login(dto: LoginDto) {
@@ -47,11 +43,17 @@ export class AuthService {
     const isMatch = await bcrypt.compare(dto.password, user.password);
     if (!isMatch) throw new UnauthorizedException('Sai thông tin đăng nhập!');
 
-    // 3. Tạo Token
-    const payload = { sub: user.id, email: user.email };
-    const token = await this.jwtService.signAsync(payload);
+    // 3. Tạo Token và trả về
+    return this.generateAuthResponse(user);
+  }
 
-    // 4. Trả về data thô — Interceptor sẽ tự bọc thành format chuẩn
-    return { id: user.id, name: user.name, accessToken: token };
+  /**
+   * Helper: Tạo JWT Token và trả về response chuẩn cho cả Register & Login.
+   * Tập trung logic ở 1 chỗ để tránh lặp code.
+   */
+  private async generateAuthResponse(user: { id: number; name: string; email: string }) {
+    const payload = { sub: user.id, email: user.email };
+    const accessToken = await this.jwtService.signAsync(payload);
+    return { id: user.id, name: user.name, accessToken };
   }
 }

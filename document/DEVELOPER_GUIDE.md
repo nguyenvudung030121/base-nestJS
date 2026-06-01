@@ -10,10 +10,21 @@ Dự án được cấu trúc theo các module đặc trưng của NestJS giúp 
 
 ```text
 src/
-├── main.ts                   # Điểm khởi chạy ứng dụng (cấu hình Pipes, Swagger, PORT)
+├── main.ts                   # Điểm khởi chạy ứng dụng (Pipes, Filter, Interceptor, Swagger)
 ├── app.module.ts             # Module gốc (Root Module) kết nối tất cả các modules khác
 ├── app.controller.ts         # Controller mặc định (Hello World)
 ├── app.service.ts            # Service mặc định
+│
+├── common/                   # Các thành phần dùng chung toàn dự án
+│   ├── filters/
+│   │   └── global-exception.filter.ts  # Bắt & chuẩn hóa toàn bộ lỗi về 1 format
+│   ├── interceptors/
+│   │   └── transform.interceptor.ts    # Bọc response thành công về format chuẩn
+│   └── pagination/                     # Kiến trúc phân trang dùng chung
+│       ├── index.ts                    # Barrel export
+│       ├── page-options.dto.ts         # DTO base chứa page, limit, skip
+│       ├── page-meta.dto.ts            # Tính toán totalPages, hasNext, hasPrevious
+│       └── page.dto.ts                 # Generic wrapper PageDto<T> (items + meta)
 │
 ├── prisma/                   # Cầu nối Cơ sở dữ liệu (Database Connection)
 │   ├── prisma.module.ts      # Đăng ký PrismaService toàn cục
@@ -32,10 +43,11 @@ src/
 │
 └── invoices/                 # Module Quản lý Hóa Đơn (Invoices)
     ├── invoices.module.ts    # Khai báo Invoices module
-    ├── invoices.controller.ts# Định nghĩa endpoints GET /invoices, POST /invoices (được bảo vệ bởi Guard)
-    ├── invoices.service.ts   # Xử lý logic nghiệp vụ thêm/lấy hóa đơn
+    ├── invoices.controller.ts# Định nghĩa endpoints GET, POST /invoices, POST /invoices/upload
+    ├── invoices.service.ts   # Xử lý logic nghiệp vụ (CRUD + phân trang)
     └── dto/
-        └── create-invoice.dto.ts # Định nghĩa & validate dữ liệu tạo hóa đơn mới
+        ├── create-invoice.dto.ts  # Validate dữ liệu tạo hóa đơn mới
+        └── get-invoices.dto.ts    # Query params phân trang + lọc (extends PageOptionsDto)
 ```
 
 ---
@@ -66,25 +78,116 @@ erDiagram
 
 ---
 
-## 3. Cách Thức Hoạt Động (How It Works)
+## 3. Chuẩn Hóa Response Format (Standardized API Response)
 
-### 3.1. Luồng Đi Của Một Request Xác Thực (Authorized Request Flow)
-Khi Client gọi một API cần xác thực (ví dụ: tạo hóa đơn), request sẽ đi qua các lớp lang xử lý như sau:
+Toàn bộ API response (thành công & thất bại) đều tuân theo **một format duy nhất** để Flutter app có thể parse qua một class `BaseResponse`.
+
+### 3.1. Response Thành Công (Không phân trang)
+```json
+{
+  "success": true,
+  "statusCode": 200,
+  "message": "Thành công",
+  "data": { "id": 1, "name": "...", "accessToken": "..." }
+}
+```
+
+### 3.2. Response Thành Công (Có phân trang)
+```json
+{
+  "success": true,
+  "statusCode": 200,
+  "message": "Thành công",
+  "data": [ ... ],
+  "meta": {
+    "page": 1,
+    "limit": 10,
+    "totalItems": 25,
+    "totalPages": 3,
+    "hasPreviousPage": false,
+    "hasNextPage": true
+  }
+}
+```
+
+### 3.3. Response Lỗi
+```json
+{
+  "success": false,
+  "statusCode": 400,
+  "message": "Email này đã tồn tại!",
+  "data": null,
+  "errorDetails": {
+    "path": "/auth/register",
+    "timestamp": "2026-05-29T07:15:00.000Z",
+    "errors": ["lỗi 1", "lỗi 2"]
+  }
+}
+```
+
+> [!IMPORTANT]
+> **Quy tắc cho developer:** Service/Controller chỉ cần `return data` hoặc `throw new HttpException(...)`. **KHÔNG** bọc response thủ công — `TransformInterceptor` và `GlobalExceptionFilter` sẽ tự xử lý.
+
+---
+
+## 4. Kiến Trúc Phân Trang (Pagination Architecture)
+
+Dự án cung cấp sẵn 3 class dùng chung trong `src/common/pagination/`:
+
+| Class | Vai trò |
+|-------|--------|
+| `PageOptionsDto` | Base DTO chứa `page`, `limit` (có validation) và getter `skip` |
+| `PageMetaDto` | Tự động tính `totalPages`, `hasPreviousPage`, `hasNextPage` |
+| `PageDto<T>` | Generic wrapper chứa `items: T[]` và `meta: PageMetaDto` |
+
+### Cách áp dụng cho module mới:
+
+**Bước 1:** Tạo DTO kế thừa `PageOptionsDto`, chỉ thêm trường lọc riêng:
+```typescript
+export class GetProductsDto extends PageOptionsDto {
+  @IsOptional()
+  category?: string;
+}
+```
+
+**Bước 2:** Trong Service, dùng `Promise.all` gọi `findMany` + `count`, rồi trả về `PageDto`:
+```typescript
+async findAll(dto: GetProductsDto) {
+  const [items, itemCount] = await Promise.all([
+    this.prisma.product.findMany({
+      where: { ... },
+      skip: dto.skip,
+      take: dto.limit,
+      orderBy: { createdAt: 'desc' },
+    }),
+    this.prisma.product.count({ where: { ... } }),
+  ]);
+  return new PageDto(items, new PageMetaDto({ pageOptionsDto: dto, itemCount }));
+}
+```
+
+---
+
+## 5. Cách Thức Hoạt Động (How It Works)
+
+### 5.1. Luồng Đi Của Một Request Xác Thực (Authorized Request Flow)
+Khi Client gọi một API cần xác thực (ví dụ: tạo hóa đơn), request sẽ đi qua các lớp xử lý như sau:
 
 ```mermaid
 graph TD
-    Client[Client / Mobile / HTTP File] -->|1. Gửi request kèm Authorization Header Bearer token| Main[main.ts: ValidationPipe & Swagger]
-    Main -->|2. Khớp Route URL| Guard[JwtAuthGuard]
-    Guard -->|3. Xác thực & Giải mã Token| Jwt[JwtService]
-    Guard -->|4. Nhét payload giải mã được vào request['user']| Controller[InvoicesController]
-    Controller -->|5. Xác thực kiểu dữ liệu payload| DTO[CreateInvoiceDto]
-    Controller -->|6. Lấy userId từ request['user'].sub chuyển tiếp| Service[InvoicesService]
-    Service -->|7. Thực hiện truy vấn DB| Prisma[PrismaService]
-    Prisma -->|8. Ghi dữ liệu| DB[(PostgreSQL Database)]
-    DB -->|9. Trả kết quả thành công| Client
+    Client["Client / Mobile"] -->|"1. Gửi request kèm Bearer Token"| Pipe["ValidationPipe (ép kiểu + validate DTO)"]
+    Pipe -->|"2. Khớp Route"| Guard["JwtAuthGuard"]
+    Guard -->|"3. Giải mã Token, gắn user vào request"| Controller["Controller"]
+    Controller -->|"4. Gọi Service với data đã validate"| Service["Service"]
+    Service -->|"5. Truy vấn DB"| Prisma["PrismaService"]
+    Prisma -->|"6. Trả data thô"| Interceptor["TransformInterceptor (bọc response chuẩn)"]
+    Interceptor -->|"7. JSON chuẩn hóa"| Client
+
+    Service -->|"Nếu lỗi nghiệp vụ: throw HttpException"| Filter["GlobalExceptionFilter"]
+    Filter -->|"JSON lỗi chuẩn hóa"| Client
 ```
 
-### 3.2. Cơ Chế Xác Thực JWT (Authentication Flow)
+### 5.2. Cơ Chế Xác Thực JWT (Authentication Flow)
 1. **Đăng ký (`/auth/register`)**:
    * Kiểm tra email trùng lặp thông qua `PrismaService`.
    * Sử dụng thư viện `bcrypt` để mã hóa mật khẩu (`hash`) với độ an toàn cao trước khi lưu vào DB.
@@ -99,7 +202,7 @@ graph TD
 
 ---
 
-## 4. Hướng Dẫn Cấu Hình & Chạy Dự Án (Getting Started)
+## 6. Hướng Dẫn Cấu Hình & Chạy Dự Án (Getting Started)
 
 ### 4.1. Chuẩn Bị Môi Trường
 * Cài đặt **Node.js** (Khuyên dùng phiên bản LTS).
@@ -138,7 +241,7 @@ PORT=3000
 
 ---
 
-## 5. Tài Liệu Hướng Dẫn Sử Dụng API
+## 7. Tài Liệu Hướng Dẫn Sử Dụng API
 
 ### 5.1. Swagger UI Docs (Khuyên dùng)
 Dự án đã tích hợp sẵn Swagger. Khi server đang chạy ở local, bạn có thể truy cập:

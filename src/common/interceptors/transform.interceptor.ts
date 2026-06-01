@@ -45,6 +45,17 @@ export class TransformInterceptor<T>
           responseData = rest;
         }
 
+        // Phân trang: Nếu là PageDto (có items + meta) → đẩy meta lên ngang hàng với data
+        if (responseData && typeof responseData === 'object' && 'items' in responseData && 'meta' in responseData) {
+          return {
+            success: true,
+            statusCode: response.statusCode,
+            message,
+            data: responseData.items,
+            meta: responseData.meta,
+          };
+        }
+
         return {
           success: true,
           statusCode: response.statusCode,
