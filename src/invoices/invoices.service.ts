@@ -1,5 +1,7 @@
 // src/invoices/invoices.service.ts
-import { Injectable } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Inject, Injectable } from '@nestjs/common';
+import { Cache } from 'cache-manager';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { GetInvoicesDto } from './dto/get-invoices.dto';
@@ -9,7 +11,10 @@ import { Prisma } from '../../generated/prisma/client';
 @Injectable()
 export class InvoicesService {
   // Dependency Injection: Tiêm cầu nối DB vào đây
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
+  ) {}
 
   // POST: Tạo hóa đơn mới
   async create(dto: CreateInvoiceDto, userId: number) {
@@ -21,6 +26,9 @@ export class InvoicesService {
         userId: userId, // Nối với User lấy từ token
       },
     });
+
+    await this.clearCache();
+
     return newInvoice;
   }
 
@@ -49,5 +57,18 @@ export class InvoicesService {
     // 3. Tính toán meta pagination và trả về
     const meta = new PageMetaDto({ pageOptionsDto: dto, itemCount });
     return new PageDto(items, meta);
+  }
+
+  private async clearCache() {
+    const cacheManager = this.cacheManager as Cache & {
+      reset?: () => Promise<void>;
+    };
+
+    if (cacheManager.reset) {
+      await cacheManager.reset();
+      return;
+    }
+
+    await cacheManager.clear();
   }
 }
