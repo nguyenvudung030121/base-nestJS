@@ -20,6 +20,7 @@ model User {
   email     String    @unique // Email là duy nhất
   name      String
   password  String // Mật khẩu dạng hash
+  fcmToken  String?
   createdAt DateTime  @default(now())
   invoices  Invoice[] // Mối quan hệ: Một user có nhiều hóa đơn
 }

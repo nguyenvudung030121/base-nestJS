@@ -1,6 +1,6 @@
 # Hướng Dẫn Phát Triển & Tài Liệu Kỹ Thuật (NestJS Backend API)
 
-Tài liệu này cung cấp cái nhìn chi tiết về cấu trúc thư mục, cơ chế hoạt động, cơ sở dữ liệu và cách sử dụng ứng dụng backend quản lý hóa đơn (Invoice App) được xây dựng trên framework **NestJS**, kết hợp với **Prisma ORM**, **PostgreSQL**, **Swagger API Docs**, **@nestjs/config**, **@nestjs/throttler**, **@nestjs/schedule** và **@nestjs/cache-manager**.
+Tài liệu này cung cấp cái nhìn chi tiết về cấu trúc thư mục, cơ chế hoạt động, cơ sở dữ liệu và cách sử dụng ứng dụng backend quản lý hóa đơn (Invoice App) được xây dựng trên framework **NestJS**, kết hợp với **Prisma ORM**, **PostgreSQL**, **Swagger API Docs**, **@nestjs/config**, **@nestjs/throttler**, **@nestjs/schedule**, **@nestjs/cache-manager** và **Firebase Admin SDK**.
 
 ---
 
@@ -46,6 +46,18 @@ src/
 │       └── jwt-auth/
 │           └── jwt-auth.guard.ts # Xác thực JWT Token gửi lên từ Client bằng JWT_SECRET
 │
+├── firebase/                 # Module Firebase Admin SDK
+│   ├── firebase.module.ts    # Global module export FirebaseService
+│   └── firebase.service.ts   # Khởi tạo Firebase Admin từ FIREBASE_KEY_PATH và gửi FCM push
+│
+├── users/                    # Module Người dùng
+│   ├── users.module.ts       # Import AuthModule để dùng JwtAuthGuard
+│   ├── users.controller.ts   # PATCH /users/fcm-token, POST /users/test-push
+│   ├── users.service.ts      # Lưu FCM token và gửi test push notification
+│   └── dto/
+│       ├── update-fcm-token.dto.ts
+│       └── test-push.dto.ts
+│
 └── invoices/                 # Module Quản lý Hóa Đơn (Invoices)
     ├── invoices.module.ts    # Khai báo Invoices module, import AuthModule để dùng JwtAuthGuard
     ├── invoices.controller.ts# Định nghĩa endpoints GET, POST /invoices, POST /invoices/upload
@@ -68,6 +80,7 @@ erDiagram
         String email UK "Duy nhất"
         String name "Tên người dùng"
         String password "Mật khẩu đã hash bằng bcrypt"
+        String fcmToken "FCM token, nullable"
         DateTime createdAt "Thời gian tạo"
     }
     INVOICE {
@@ -322,6 +335,64 @@ Ví dụ log:
 [CronJob] Đã quét và cập nhật 3 hóa đơn quá hạn!
 ```
 
+### 5.6. Firebase Admin SDK và FCM Push Notification
+
+`FirebaseModule` là global module, nên các service khác có thể inject `FirebaseService` mà không cần import lại module ở từng nơi.
+
+Khi ứng dụng khởi động, `FirebaseService.onModuleInit()`:
+
+1. Đọc biến môi trường `FIREBASE_KEY_PATH`.
+2. Dùng `path.join(process.cwd(), keyFile)` để tìm file service account JSON ở thư mục gốc dự án.
+3. Parse JSON key và gọi `admin.initializeApp({ credential: admin.credential.cert(serviceAccount) })`.
+4. Nếu Firebase Admin đã được initialize trước đó, service bỏ qua để tránh initialize trùng app.
+
+Ví dụ cấu hình theo môi trường:
+
+```env
+FIREBASE_KEY_PATH="firebase-service-account.staging.json"
+```
+
+> [!IMPORTANT]
+> File service account JSON chứa private key của Google. Không commit file key này lên Git. Mỗi môi trường nên có key riêng và trỏ bằng `FIREBASE_KEY_PATH` trong `.env.development`, `.env.staging`, `.env.production`.
+
+### 5.7. Lưu FCM Token từ Flutter
+
+Flutter app lấy FCM token từ Firebase Messaging rồi gửi lên API:
+
+```http
+PATCH /users/fcm-token
+Authorization: Bearer <accessToken>
+Content-Type: application/json
+
+{
+  "fcmToken": "fY3x...device-fcm-token"
+}
+```
+
+Backend lấy `userId` từ JWT payload `request.user.sub`, không nhận `userId` từ client ở endpoint này. `UsersService.updateFcmToken()` update cột `User.fcmToken` và trả về thông tin user không bao gồm `password`.
+
+Endpoint test push tạm thời:
+
+```http
+POST /users/test-push
+Authorization: Bearer <accessToken>
+Content-Type: application/json
+
+{
+  "userId": "1",
+  "title": "Thông báo test",
+  "body": "Firebase Cloud Messaging đã hoạt động."
+}
+```
+
+Luồng xử lý:
+
+1. Controller nhận `userId`, `title`, `body`.
+2. Service tìm user trong database để lấy `fcmToken`.
+3. Nếu user không tồn tại, trả `404`.
+4. Nếu user chưa có FCM token, trả `400`.
+5. Nếu hợp lệ, gọi `FirebaseService.sendPushNotification(token, title, body)`.
+
 ---
 
 ## 6. Hướng Dẫn Cấu Hình & Chạy Dự Án (Getting Started)
@@ -357,6 +428,7 @@ DATABASE_URL="postgresql://myuser:mypassword@localhost:5432/invoice_db?schema=pu
 DIRECT_URL="postgresql://myuser:mypassword@localhost:5432/invoice_db?schema=public"
 SUPABASE_URL="https://your-project.supabase.co"
 SUPABASE_SERVICE_ROLE_KEY="your-supabase-service-role-key"
+FIREBASE_KEY_PATH="firebase-service-account.development.json"
 ```
 
 Lưu ý:
@@ -368,6 +440,7 @@ Lưu ý:
 - `.gitignore` phải ignore `.env` và `.env.*` để tránh push nhầm secrets lên GitHub.
 - Nếu password trong connection string có ký tự đặc biệt như `@`, phải URL-encode, ví dụ `@` thành `%40`.
 - `SUPABASE_URL` và `SUPABASE_SERVICE_ROLE_KEY` được dùng cho Supabase Storage.
+- `FIREBASE_KEY_PATH` là tên file service account JSON của Firebase Admin SDK, đặt ở thư mục gốc dự án theo từng môi trường.
 
 ### 6.2.1. Supabase, Prisma và Connection Pooling
 
@@ -477,9 +550,34 @@ Dự án đã tích hợp sẵn Swagger. Khi server đang chạy ở local, bạ
 👉 **[http://localhost:3000/docs](http://localhost:3000/docs)** để xem tài liệu chi tiết và test trực tiếp các API.
 
 > [!TIP]
-> Để test các API Invoice, bạn hãy chạy API Đăng nhập/Đăng ký trên Swagger trước -> Copy chuỗi `accessToken` -> Bấm nút **Authorize** ở góc phải phía trên giao diện Swagger -> Dán token vào và lưu lại.
+> Để test các API cần đăng nhập như Invoice hoặc Users/FCM, bạn hãy chạy API Đăng nhập/Đăng ký trên Swagger trước -> Copy chuỗi `accessToken` -> Bấm nút **Authorize** ở góc phải phía trên giao diện Swagger -> Dán token vào và lưu lại.
 
-### 7.2. File REST Client (.http)
+### 7.2. API Users và FCM
+
+| Method | Endpoint           | Auth Bearer | Mục đích                           |
+| ------ | ------------------ | ----------- | ---------------------------------- |
+| PATCH  | `/users/fcm-token` | Có          | Lưu/cập nhật FCM token của user    |
+| POST   | `/users/test-push` | Có          | Gửi thử push notification tạm thời |
+
+Body `PATCH /users/fcm-token`:
+
+```json
+{
+  "fcmToken": "fY3x...device-fcm-token"
+}
+```
+
+Body `POST /users/test-push`:
+
+```json
+{
+  "userId": "1",
+  "title": "Thông báo test",
+  "body": "Firebase Cloud Messaging đã hoạt động."
+}
+```
+
+### 7.3. File REST Client (.http)
 
 Bạn cũng có thể test nhanh thông qua file [test-requests.http](file:///Users/Shared/dung_data/BE/base-nestjs/base-backend/test-requests.http) nếu sử dụng công cụ mở rộng REST Client trong VS Code.
 Hãy làm theo thứ tự:
@@ -530,3 +628,14 @@ Các điểm đáng chú ý khi chuyển sang kiến trúc dev/staging/productio
 - `prisma.config.ts` cấu hình Prisma CLI dùng `DIRECT_URL`, tránh chạy migration qua Supabase pooler `:6543`.
 - Với Supabase, encode ký tự đặc biệt trong password của connection string, ví dụ `@` thành `%40`.
 - Upload ảnh hóa đơn chuyển từ local `uploads/` sang Supabase Storage bucket `receipts`; Multer dùng `memoryStorage()` để tránh ghi file lên filesystem staging.
+
+### 8.4. Firebase Admin SDK và FCM Token
+
+Các điểm mới liên quan đến push notification:
+
+- Thêm dependency `firebase-admin`.
+- Thêm `FirebaseModule` global và `FirebaseService` để initialize Firebase Admin SDK bằng service account JSON theo `FIREBASE_KEY_PATH`.
+- Thêm cột nullable `User.fcmToken` trong Prisma schema và migration `20260602000000_add_user_fcm_token`.
+- Thêm `UsersModule`, import `AuthModule` để resolve được `JwtAuthGuard` và `JwtService`.
+- Thêm API `PATCH /users/fcm-token` để Flutter app gửi FCM token sau khi user đăng nhập.
+- Thêm API tạm `POST /users/test-push` để lấy token trong DB và gọi `FirebaseService.sendPushNotification()`.

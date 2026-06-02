@@ -11,6 +11,8 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { CronModule } from './cron/cron.module';
 import { StorageModule } from './storage/storage.module';
+import { FirebaseModule } from './firebase/firebase.module';
+import { UsersModule } from './users/users.module';
 
 const nodeEnv = process.env.NODE_ENV;
 const envFilePath =
@@ -31,6 +33,8 @@ const envFilePath =
     AuthModule,
     CronModule,
     StorageModule,
+    FirebaseModule,
+    UsersModule,
   ],
   controllers: [AppController],
   providers: [
