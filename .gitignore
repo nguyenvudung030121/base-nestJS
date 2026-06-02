@@ -60,3 +60,8 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 # Uploads
 /uploads
+
+# Firebase keys
+firebase-dev-key.json
+firebase-prod-key.json
+firebase-staging-key.json
