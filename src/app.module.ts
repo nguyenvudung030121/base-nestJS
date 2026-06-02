@@ -10,6 +10,7 @@ import { InvoicesModule } from './invoices/invoices.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { CronModule } from './cron/cron.module';
+import { StorageModule } from './storage/storage.module';
 
 const nodeEnv = process.env.NODE_ENV;
 const envFilePath =
@@ -29,6 +30,7 @@ const envFilePath =
     PrismaModule,
     AuthModule,
     CronModule,
+    StorageModule,
   ],
   controllers: [AppController],
   providers: [

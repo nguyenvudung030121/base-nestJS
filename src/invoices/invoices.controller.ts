@@ -12,8 +12,7 @@ import {
 } from '@nestjs/common';
 import { Request } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { diskStorage } from 'multer'; // Để lưu ảnh
-import { extname } from 'path'; // Để lấy đuôi file
+import { memoryStorage } from 'multer';
 import {
   ApiBearerAuth,
   ApiTags,
@@ -26,13 +25,17 @@ import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { GetInvoicesDto } from './dto/get-invoices.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth/jwt-auth.guard'; // Import Guard
 import { UserCacheInterceptor } from '../common/interceptors/user-cache.interceptor';
+import { SupabaseService } from '../storage/supabase.service';
 
 @ApiTags('Invoices')
 @ApiBearerAuth() // Đánh dấu API này yêu cầu Token trong Swagger UI
 @UseGuards(JwtAuthGuard) // Bật chốt chặn bảo vệ TOÀN BỘ API trong file này
 @Controller('invoices')
 export class InvoicesController {
-  constructor(private readonly invoicesService: InvoicesService) {}
+  constructor(
+    private readonly invoicesService: InvoicesService,
+    private readonly supabaseService: SupabaseService,
+  ) {}
 
   @Post()
   async create(
@@ -71,24 +74,16 @@ export class InvoicesController {
   })
   @UseInterceptors(
     FileInterceptor('file', {
-      storage: diskStorage({
-        destination: './uploads', // Thư mục lưu file
-        filename: (req, file, cb) => {
-          // Tạo tên file ngẫu nhiên để không bị trùng (ví dụ: 1691234567-3453.jpg)
-          const uniqueSuffix =
-            Date.now() + '-' + Math.round(Math.random() * 1e9);
-          const ext = extname(file.originalname);
-          cb(null, `${uniqueSuffix}${ext}`);
-        },
-      }),
+      storage: memoryStorage(),
     }),
   )
-  uploadInvoiceImage(@UploadedFile() file: Express.Multer.File) {
+  async uploadInvoiceImage(@UploadedFile() file: Express.Multer.File) {
     if (!file) {
       throw new BadRequestException('Vui lòng chọn một file ảnh!');
     }
 
-    // Trả về đường dẫn của file vừa lưu — Interceptor sẽ tự bọc
-    return { imageUrl: file.path };
+    const imageUrl = await this.supabaseService.uploadReceipt(file);
+
+    return { imageUrl };
   }
 }

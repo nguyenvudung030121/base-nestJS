@@ -355,6 +355,8 @@ PORT=3000
 JWT_SECRET="một_chuỗi_bí_mật_siêu_dài_và_khó_đoán"
 DATABASE_URL="postgresql://myuser:mypassword@localhost:5432/invoice_db?schema=public"
 DIRECT_URL="postgresql://myuser:mypassword@localhost:5432/invoice_db?schema=public"
+SUPABASE_URL="https://your-project.supabase.co"
+SUPABASE_SERVICE_ROLE_KEY="your-supabase-service-role-key"
 ```
 
 Lưu ý:
@@ -365,6 +367,7 @@ Lưu ý:
 - `DIRECT_URL` là connection string trực tiếp cho Prisma migration.
 - `.gitignore` phải ignore `.env` và `.env.*` để tránh push nhầm secrets lên GitHub.
 - Nếu password trong connection string có ký tự đặc biệt như `@`, phải URL-encode, ví dụ `@` thành `%40`.
+- `SUPABASE_URL` và `SUPABASE_SERVICE_ROLE_KEY` được dùng cho Supabase Storage.
 
 ### 6.2.1. Supabase, Prisma và Connection Pooling
 
@@ -399,6 +402,19 @@ export default defineConfig({
 ```
 
 Điểm quan trọng: Prisma CLI hiện load `prisma.config.ts`, nên nếu config override datasource bằng `DATABASE_URL`, lệnh migration staging có thể bị đứng ở pooler `:6543`. Với migration, hãy để CLI dùng `DIRECT_URL`.
+
+### 6.2.2. Supabase Storage cho ảnh hóa đơn
+
+API `POST /invoices/upload` không còn ghi file vào thư mục local `uploads/`. Controller dùng `memoryStorage()` của Multer để giữ file tạm trong RAM, sau đó `SupabaseService.uploadReceipt()` upload `file.buffer` lên Supabase Storage.
+
+Yêu cầu trên Supabase:
+
+- Tạo bucket tên `receipts`.
+- Bucket cần public hoặc có policy cho phép đọc public nếu API trả public URL.
+- `.env.staging` và `.env.production` cần có `SUPABASE_URL` và `SUPABASE_SERVICE_ROLE_KEY`.
+- Không đưa service role key vào Flutter/client. Key này chỉ được lưu ở backend environment.
+
+Sau khi upload thành công, service gọi `getPublicUrl()` và trả về `imageUrl` dạng URL công khai. Client có thể gửi URL này vào `POST /invoices` để lưu vào cột `imageUrl`.
 
 ### 6.3. Các Lệnh Chạy Dự Án
 
@@ -513,3 +529,4 @@ Các điểm đáng chú ý khi chuyển sang kiến trúc dev/staging/productio
 - `schema.prisma` dùng `url = env("DATABASE_URL")` cho runtime và `directUrl = env("DIRECT_URL")` cho migration.
 - `prisma.config.ts` cấu hình Prisma CLI dùng `DIRECT_URL`, tránh chạy migration qua Supabase pooler `:6543`.
 - Với Supabase, encode ký tự đặc biệt trong password của connection string, ví dụ `@` thành `%40`.
+- Upload ảnh hóa đơn chuyển từ local `uploads/` sang Supabase Storage bucket `receipts`; Multer dùng `memoryStorage()` để tránh ghi file lên filesystem staging.

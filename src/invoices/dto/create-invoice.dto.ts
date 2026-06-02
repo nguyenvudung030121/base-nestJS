@@ -11,10 +11,10 @@ export class CreateInvoiceDto {
   @IsNumber()
   amount: number;
 
-  // THÊM ĐOẠN NÀY
-  @ApiPropertyOptional({ 
-    description: 'Đường dẫn ảnh hóa đơn (lấy từ API upload)',
-    example: '/uploads/1780026811089-63681019.png' 
+  @ApiPropertyOptional({
+    description: 'Public URL ảnh hóa đơn (lấy từ API upload)',
+    example:
+      'https://example.supabase.co/storage/v1/object/public/receipts/1780026811089-63681019.png',
   })
   @IsString()
   @IsOptional()
