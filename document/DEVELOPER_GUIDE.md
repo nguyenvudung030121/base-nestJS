@@ -332,21 +332,73 @@ Ví dụ log:
 - Khởi động cơ sở dữ liệu **PostgreSQL** (chạy local hoặc thông qua Docker).
   - Nếu dùng Docker, bạn có thể chạy container có sẵn bằng lệnh: `docker start nest-postgres` (hoặc khởi tạo container PostgreSQL mới trên cổng `5432`).
 
-### 6.2. Cấu Hình Biến Môi Trường
+### 6.2. Cấu Hình Biến Môi Trường Đa Môi Trường
 
-Tạo file `.env` ở thư mục gốc [base-backend](file:///Users/Shared/dung_data/BE/base-nestjs/base-backend) (nếu chưa có) và cập nhật các biến môi trường:
+Dự án dùng nhiều file môi trường thay vì một file `.env` duy nhất:
+
+```text
+.env.development
+.env.staging
+.env.production
+```
+
+`AppModule` chọn file tương ứng theo `NODE_ENV`:
+
+- `NODE_ENV=development` hoặc không set: đọc `.env.development`.
+- `NODE_ENV=staging`: đọc `.env.staging`.
+- `NODE_ENV=production`: đọc `.env.production`.
+
+Ví dụ `.env.development`:
 
 ```env
 PORT=3000
 JWT_SECRET="một_chuỗi_bí_mật_siêu_dài_và_khó_đoán"
 DATABASE_URL="postgresql://myuser:mypassword@localhost:5432/invoice_db?schema=public"
+DIRECT_URL="postgresql://myuser:mypassword@localhost:5432/invoice_db?schema=public"
 ```
 
 Lưu ý:
 
 - `PORT` được đọc trong `main.ts` bằng `ConfigService`; nếu không có giá trị, server fallback về `3000`.
 - `JWT_SECRET` được dùng để ký và xác minh JWT. Không commit `.env` lên Git.
-- `DATABASE_URL` phải trỏ đúng PostgreSQL đang chạy local hoặc remote.
+- `DATABASE_URL` là connection string runtime cho API thông thường.
+- `DIRECT_URL` là connection string trực tiếp cho Prisma migration.
+- `.gitignore` phải ignore `.env` và `.env.*` để tránh push nhầm secrets lên GitHub.
+- Nếu password trong connection string có ký tự đặc biệt như `@`, phải URL-encode, ví dụ `@` thành `%40`.
+
+### 6.2.1. Supabase, Prisma và Connection Pooling
+
+Khi dùng Supabase:
+
+- `DATABASE_URL`: dùng connection pooling/Supavisor cho API runtime, thường là host pooler và port `6543`.
+- `DIRECT_URL`: dùng direct/session connection cho migration, không dùng transaction pooler.
+
+Trong `prisma/schema.prisma`, datasource cần khai báo cả hai biến:
+
+```prisma
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+```
+
+`prisma.config.ts` được cấu hình để Prisma CLI dùng `DIRECT_URL` khi chạy migration:
+
+```typescript
+export default defineConfig({
+  schema: 'prisma/schema.prisma',
+  migrations: {
+    path: 'prisma/migrations',
+  },
+  engine: 'classic',
+  datasource: {
+    url: env('DIRECT_URL'),
+  },
+});
+```
+
+Điểm quan trọng: Prisma CLI hiện load `prisma.config.ts`, nên nếu config override datasource bằng `DATABASE_URL`, lệnh migration staging có thể bị đứng ở pooler `:6543`. Với migration, hãy để CLI dùng `DIRECT_URL`.
 
 ### 6.3. Các Lệnh Chạy Dự Án
 
@@ -356,11 +408,18 @@ Lưu ý:
   npm install
   ```
 
-- **Đồng bộ Database (Prisma Migrations):**
-  Cập nhật cấu trúc DB khớp với file schema.prisma:
+- **Đồng bộ Database Development (Prisma Migrations):**
+  Dùng cho môi trường dev vì `migrate dev` có thể tạo migration mới, dùng shadow database và có thể reset dữ liệu trong quá trình phát triển:
 
   ```bash
-  npx prisma migrate dev --name init_db
+  npm run migrate:dev
+  ```
+
+- **Apply Migration lên Staging:**
+  Dùng cho staging/production vì `migrate deploy` chỉ áp dụng các migration file đã tồn tại, không tự sinh migration mới và an toàn hơn cho DB thật:
+
+  ```bash
+  npm run migrate:staging
   ```
 
 - **Khởi chạy Server ở chế độ Phát Triển (Watch Mode):**
@@ -368,6 +427,15 @@ Lưu ý:
   ```bash
   npm run start:dev
   ```
+
+- **Khởi chạy Server Staging sau khi build:**
+
+  ```bash
+  npm run build
+  npm run start:staging
+  ```
+
+  Lưu ý: output build hiện nằm ở `dist/src/main.js`, nên script staging/production chạy `node dist/src/main`.
 
 - **Expose local server qua ngrok:**
   Backend cần listen ở port `3000`, sau đó chạy:
@@ -432,3 +500,16 @@ Các thay đổi hiện tại liên quan đến cron job và cache:
 - Cấu hình `CacheModule.register({ isGlobal: true, ttl: 10000 })` trong `AppModule`.
 - Gắn `@UseInterceptors(UserCacheInterceptor)` cho API `GET /invoices` để cache theo từng user.
 - Inject `CACHE_MANAGER` vào `InvoicesService` và xóa cache sau khi tạo hóa đơn mới để tránh trả dữ liệu cũ.
+
+### 8.3. Thiết lập đa môi trường và Prisma migration với Supabase
+
+Các điểm đáng chú ý khi chuyển sang kiến trúc dev/staging/production:
+
+- Thêm `cross-env` để set `NODE_ENV` nhất quán trên Windows/macOS/Linux.
+- Thay `.env` bằng `.env.development`, `.env.staging`, `.env.production`; các file `.env.*` phải được ignore trong Git.
+- `ConfigModule.forRoot()` đọc env file theo `NODE_ENV`.
+- Script `start:staging` và `start:prod` chạy `node dist/src/main` vì build output hiện nằm trong `dist/src/main.js`.
+- Thêm `dotenv-cli` để Prisma CLI đọc đúng file môi trường qua `dotenv -e .env.<env> -- ...`.
+- `schema.prisma` dùng `url = env("DATABASE_URL")` cho runtime và `directUrl = env("DIRECT_URL")` cho migration.
+- `prisma.config.ts` cấu hình Prisma CLI dùng `DIRECT_URL`, tránh chạy migration qua Supabase pooler `:6543`.
+- Với Supabase, encode ký tự đặc biệt trong password của connection string, ví dụ `@` thành `%40`.
