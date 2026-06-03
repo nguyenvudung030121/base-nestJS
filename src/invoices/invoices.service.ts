@@ -1,18 +1,22 @@
 // src/invoices/invoices.service.ts
 import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cache } from 'cache-manager';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { GetInvoicesDto } from './dto/get-invoices.dto';
 import { PageDto, PageMetaDto } from '../common/pagination';
 import { Prisma } from '../../generated/prisma/client';
+import { FirebaseService } from '../firebase/firebase.service';
 
 @Injectable()
 export class InvoicesService {
+  private readonly logger = new Logger(InvoicesService.name);
+
   // Dependency Injection: Tiêm cầu nối DB vào đây
   constructor(
     private readonly prisma: PrismaService,
+    private readonly firebaseService: FirebaseService,
     @Inject(CACHE_MANAGER) private readonly cacheManager: Cache,
   ) {}
 
@@ -27,6 +31,7 @@ export class InvoicesService {
       },
     });
 
+    await this.sendNewInvoiceNotification(userId, newInvoice.id);
     await this.clearCache();
 
     return newInvoice;
@@ -70,5 +75,32 @@ export class InvoicesService {
     }
 
     await cacheManager.clear();
+  }
+
+  private async sendNewInvoiceNotification(
+    userId: number,
+    invoiceId: number,
+  ): Promise<void> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { fcmToken: true },
+    });
+
+    if (!user?.fcmToken) {
+      return;
+    }
+
+    try {
+      await this.firebaseService.sendPushNotification(
+        user.fcmToken,
+        '🧾 Có hóa đơn mới!',
+        `Bạn vừa nhận được hóa đơn mới với mã #${invoiceId}. Vui lòng kiểm tra và thanh toán.`,
+      );
+    } catch (error) {
+      this.logger.error(
+        `Failed to send new invoice push notification for invoice #${invoiceId}.`,
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
   }
 }
