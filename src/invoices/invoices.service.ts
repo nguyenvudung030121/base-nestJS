@@ -21,12 +21,10 @@ export class InvoicesService {
   ) {}
 
   // POST: Tạo hóa đơn mới
-  async create(dto: CreateInvoiceDto, userId: number) {
+  async create(dto: CreateInvoiceDto, userId: string) {
     const newInvoice = await this.prisma.invoice.create({
       data: {
-        title: dto.title,
         amount: dto.amount,
-        imageUrl: dto.imageUrl,
         userId: userId, // Nối với User lấy từ token
       },
     });
@@ -38,7 +36,7 @@ export class InvoicesService {
   }
 
   // GET: Lấy hóa đơn có phân trang + lọc
-  async findAll(dto: GetInvoicesDto, userId: number) {
+  async findAll(dto: GetInvoicesDto, userId: string) {
     // 1. Xây dựng điều kiện lọc
     const whereCondition: Prisma.InvoiceWhereInput = {
       userId, // Chỉ lấy hóa đơn của user hiện tại
@@ -78,7 +76,7 @@ export class InvoicesService {
   }
 
   private async sendNewInvoiceNotification(
-    userId: number,
+    userId: string,
     invoiceId: number,
   ): Promise<void> {
     const user = await this.prisma.user.findUnique({

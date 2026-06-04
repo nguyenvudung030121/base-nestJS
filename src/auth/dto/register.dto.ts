@@ -1,5 +1,6 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsNotEmpty, MinLength } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsEmail, IsEnum, IsNotEmpty, IsOptional, MinLength } from 'class-validator';
+import { Department } from '../../../generated/prisma/client';
 
 export class RegisterDto {
   @ApiProperty({ example: 'testuser@example.com', description: 'Email của người dùng' })
@@ -13,4 +14,9 @@ export class RegisterDto {
   @ApiProperty({ example: 'Nguyen Van A', description: 'Tên của người dùng' })
   @IsNotEmpty()
   name: string;
+
+  @ApiPropertyOptional({ enum: Department, default: Department.IT, description: 'Phòng ban' })
+  @IsEnum(Department)
+  @IsOptional()
+  department?: Department;
 }

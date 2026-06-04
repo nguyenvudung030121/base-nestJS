@@ -2,9 +2,11 @@
 import { Injectable, ConflictException, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { Department, User } from '../../generated/prisma/client';
 
 @Injectable()
 export class AuthService {
@@ -24,9 +26,11 @@ export class AuthService {
     // 3. Lưu xuống Database
     const newUser = await this.prisma.user.create({
       data: {
+        id: randomUUID(),
         email: dto.email,
-        name: dto.name,
+        fullName: dto.name,
         password: hashedPassword,
+        department: dto.department || Department.IT,
       },
     });
 
@@ -51,9 +55,21 @@ export class AuthService {
    * Helper: Tạo JWT Token và trả về response chuẩn cho cả Register & Login.
    * Tập trung logic ở 1 chỗ để tránh lặp code.
    */
-  private async generateAuthResponse(user: { id: number; name: string; email: string }) {
+  private async generateAuthResponse(user: User) {
     const payload = { sub: user.id, email: user.email };
     const accessToken = await this.jwtService.signAsync(payload);
-    return { id: user.id, name: user.name, accessToken };
+    
+    // Decode token to extract exact expiration timestamp
+    const decoded = this.jwtService.decode(accessToken) as { exp: number };
+    const tokenExpireTime = new Date(decoded.exp * 1000).toISOString();
+
+    const userWithoutPassword = { ...user };
+    delete (userWithoutPassword as any).password;
+
+    return {
+      accessToken,
+      user: userWithoutPassword,
+      tokenExpireTime,
+    };
   }
 }

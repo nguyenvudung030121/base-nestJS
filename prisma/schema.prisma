@@ -15,24 +15,129 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+// ==========================================
+// 1. ENUMS (DANH MỤC CỐ ĐỊNH)
+// ==========================================
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  EMPLOYEE
+}
+
+enum Department {
+  IT
+  HR
+  MARKETING
+  SALES
+}
+
+enum PostCategory {
+  ANNOUNCEMENT
+  SOCIAL
+  WELCOME
+}
+
+enum ReactionType {
+  LIKE
+  LOVE
+  HAHA
+}
+
+enum InvoiceStatus {
+  PENDING
+  PAID
+  OVERDUE
+}
+
+// ==========================================
+// 2. DATABASE MODELS
+// ==========================================
+
 model User {
-  id        Int       @id @default(autoincrement()) // Khóa chính tự tăng
-  email     String    @unique // Email là duy nhất
-  name      String
-  password  String // Mật khẩu dạng hash
-  fcmToken  String?
-  createdAt DateTime  @default(now())
-  invoices  Invoice[] // Mối quan hệ: Một user có nhiều hóa đơn
+  id         String     @id
+  email      String     @unique
+  fullName   String
+  password   String
+  avatarUrl  String? // Cho phép null nếu user chưa cập nhật avatar
+  department Department
+  role       UserRole   @default(EMPLOYEE)
+  isActive   Boolean    @default(true)
+  fcmToken   String? // Giữ lại từ hệ thống thông báo cũ của bạn
+
+  // Các mối quan hệ 1-Nhiều (Relations)
+  invoices  Invoice[]
+  posts     Post[]
+  comments  Comment[]
+  reactions PostReaction[]
+  mentions  CommentMention[]
+
+  createdAt DateTime @default(now())
+
+  @@map("users") // Ánh xạ tên bảng viết thường dưới PostgreSQL
 }
 
 model Invoice {
-  id        Int      @id @default(autoincrement())
-  title     String
+  id        Int           @id @default(autoincrement())
   amount    Float
-  status    String   @default("UNPAID")
-  imageUrl  String? // Thêm dấu ? nghĩa là cột này có thể null (không bắt buộc)
-  createdAt DateTime @default(now())
+  status    InvoiceStatus @default(PENDING) // Đã chuẩn hóa sang Enum nghiêm ngặt
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime      @default(now())
 
-  userId Int
-  user   User @relation(fields: [userId], references: [id])
+  @@map("invoices")
+}
+
+model Post {
+  id        Int            @id @default(autoincrement())
+  title     String
+  content   String         @db.Text // Kiểu dữ liệu văn bản dài (Text) thay vì VARCHAR
+  imageUrls String[] // Mảng chứa danh sách link ảnh đính kèm bài viết
+  category  PostCategory
+  authorId  String
+  author    User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  comments  Comment[]
+  reactions PostReaction[]
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt // Tự động cập nhật thời gian khi có lệnh sửa
+
+  @@map("posts")
+}
+
+model Comment {
+  id        Int              @id @default(autoincrement())
+  content   String
+  postId    Int
+  post      Post             @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User             @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  mentions  CommentMention[]
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@map("comments")
+}
+
+model PostReaction {
+  id        Int          @id @default(autoincrement())
+  postId    Int
+  post      Post         @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      ReactionType
+  createdAt DateTime     @default(now())
+
+  @@unique([postId, userId]) // 🛡️ Cạm bẫy chặn trùng: Một người chỉ được thả tim 1 lần trên 1 bài
+  @@map("post_reactions")
+}
+
+model CommentMention {
+  id              Int      @id @default(autoincrement())
+  commentId       Int
+  comment         Comment  @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  mentionedUserId String
+  mentionedUser   User     @relation(fields: [mentionedUserId], references: [id], onDelete: Cascade)
+  createdAt       DateTime @default(now())
+
+  @@map("comment_mentions")
 }

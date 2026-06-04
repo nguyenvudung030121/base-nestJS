@@ -14,10 +14,8 @@ export class UsersService {
   ) {}
 
   async updateFcmToken(userId: string, fcmToken: string) {
-    const id = this.parseUserId(userId);
-
     const user = await this.prisma.user.findUnique({
-      where: { id },
+      where: { id: userId },
       select: { id: true },
     });
 
@@ -26,22 +24,20 @@ export class UsersService {
     }
 
     return this.prisma.user.update({
-      where: { id },
+      where: { id: userId },
       data: { fcmToken },
       select: {
         id: true,
         email: true,
-        name: true,
+        fullName: true,
         fcmToken: true,
       },
     });
   }
 
   async sendTestPushNotification(userId: string, title: string, body: string) {
-    const id = this.parseUserId(userId);
-
     const user = await this.prisma.user.findUnique({
-      where: { id },
+      where: { id: userId },
       select: {
         id: true,
         fcmToken: true,
@@ -66,15 +62,5 @@ export class UsersService {
       userId: user.id,
       messageId,
     };
-  }
-
-  private parseUserId(userId: string): number {
-    const id = Number(userId);
-
-    if (!Number.isInteger(id) || id <= 0) {
-      throw new BadRequestException('userId không hợp lệ.');
-    }
-
-    return id;
   }
 }

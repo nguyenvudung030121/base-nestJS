@@ -9,7 +9,7 @@ export class CronService {
   @Cron(CronExpression.EVERY_HOUR)
   async handleOverdueInvoices() {
     const unpaidInvoices = await this.prisma.invoice.findMany({
-      where: { status: 'UNPAID' },
+      where: { status: 'PENDING' },
       select: { id: true },
     });
 
