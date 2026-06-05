@@ -1,12 +1,16 @@
 // src/auth/auth.service.ts
-import { Injectable, ConflictException, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  ConflictException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
-import { Department, User } from '../../generated/prisma/client';
+import { User, UserRole } from '../../generated/prisma/client';
 
 @Injectable()
 export class AuthService {
@@ -17,7 +21,9 @@ export class AuthService {
 
   async register(dto: RegisterDto) {
     // 1. Check email trùng
-    const userExists = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    const userExists = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
     if (userExists) throw new ConflictException('Email này đã tồn tại!');
 
     // 2. Băm mật khẩu
@@ -28,9 +34,10 @@ export class AuthService {
       data: {
         id: randomUUID(),
         email: dto.email,
-        fullName: dto.name,
+        fullName: dto.fullName,
         password: hashedPassword,
-        department: dto.department || Department.IT,
+        department: dto.department,
+        role: UserRole.EMPLOYEE,
       },
     });
 
@@ -40,7 +47,9 @@ export class AuthService {
 
   async login(dto: LoginDto) {
     // 1. Tìm user
-    const user = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    const user = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
     if (!user) throw new UnauthorizedException('Sai thông tin đăng nhập!');
 
     // 2. So sánh mật khẩu
@@ -56,20 +65,50 @@ export class AuthService {
    * Tập trung logic ở 1 chỗ để tránh lặp code.
    */
   private async generateAuthResponse(user: User) {
-    const payload = { sub: user.id, email: user.email };
+    const payload = { sub: user.id, email: user.email, role: user.role };
     const accessToken = await this.jwtService.signAsync(payload);
-    
+
     // Decode token to extract exact expiration timestamp
-    const decoded = this.jwtService.decode(accessToken) as { exp: number };
+    const decoded = this.jwtService.decode<{ exp: number }>(accessToken);
     const tokenExpireTime = new Date(decoded.exp * 1000).toISOString();
 
-    const userWithoutPassword = { ...user };
-    delete (userWithoutPassword as any).password;
+    const userWithoutPassword = {
+      id: user.id,
+      email: user.email,
+      fullName: user.fullName,
+      avatarUrl: user.avatarUrl,
+      department: user.department,
+      role: user.role,
+      isActive: user.isActive,
+      fcmToken: user.fcmToken,
+      createdAt: user.createdAt,
+    };
 
     return {
       accessToken,
       user: userWithoutPassword,
       tokenExpireTime,
     };
+  }
+
+  async logout(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException(
+        'Token không hợp lệ hoặc user không tồn tại!',
+      );
+    }
+
+    // Tìm đúng User đang request và đặt fcmToken về null
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { fcmToken: null },
+    });
+
+    return { message: 'Đăng xuất thành công' };
   }
 }
