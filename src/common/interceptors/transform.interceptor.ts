@@ -28,7 +28,10 @@ export class TransformInterceptor<T>
     const response = context.switchToHttp().getResponse<Response>();
 
     return next.handle().pipe(
-      map((data) => {
+      map((rawOutput) => {
+        // Clean out password fields recursively
+        const data = this.excludePassword(rawOutput);
+
         // Anti-Double-Wrapping: Nếu data đã có field 'success' thì trả thẳng
         if (data && typeof data === 'object' && 'success' in data) {
           return data;
@@ -64,5 +67,35 @@ export class TransformInterceptor<T>
         };
       }),
     );
+  }
+
+  private excludePassword(data: any): any {
+    if (data === null || data === undefined) {
+      return data;
+    }
+
+    if (Array.isArray(data)) {
+      return data.map((item) => this.excludePassword(item));
+    }
+
+    if (typeof data === 'object') {
+      if (data instanceof Date) {
+        return data;
+      }
+      
+      const copy = { ...data };
+      if ('password' in copy) {
+        delete copy.password;
+      }
+
+      for (const key in copy) {
+        if (Object.prototype.hasOwnProperty.call(copy, key)) {
+          copy[key] = this.excludePassword(copy[key]);
+        }
+      }
+      return copy;
+    }
+
+    return data;
   }
 }

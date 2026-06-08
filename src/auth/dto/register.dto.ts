@@ -1,22 +1,32 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsEnum, IsNotEmpty, IsOptional, MinLength } from 'class-validator';
-import { Department } from '../../../generated/prisma/client';
+import { IsEmail, IsEnum, IsNotEmpty, IsOptional, IsString, MinLength } from 'class-validator';
+import { Department, UserRole } from '../../../generated/prisma/client';
 
 export class RegisterDto {
-  @ApiProperty({ example: 'testuser@example.com', description: 'Email của người dùng' })
-  @IsEmail()
-  email: string;
+  @ApiProperty({ example: 'dev.le@company.com', description: 'Email của người dùng' })
+  @IsEmail({}, { message: 'Email không đúng định dạng' })
+  @IsNotEmpty({ message: 'Email không được để trống' })
+  email!: string;
 
-  @ApiProperty({ example: 'mypassword123', description: 'Mật khẩu tối thiểu 6 ký tự' })
+  @IsString()
+  @ApiProperty({ example: 'Company@2026', description: 'Mật khẩu tối thiểu 6 ký tự' })
   @MinLength(6)
-  password: string;
+  password!: string;
 
-  @ApiProperty({ example: 'Nguyen Van A', description: 'Tên của người dùng' })
-  @IsNotEmpty()
-  name: string;
+  @IsString()
+  @ApiProperty({ example: 'Nguyễn Văn A', description: 'Họ và tên không được để trống' })
+  @IsNotEmpty({ message: 'Họ và tên không được để trống' })
+  fullName!: string;
 
-  @ApiPropertyOptional({ enum: Department, default: Department.IT, description: 'Phòng ban' })
-  @IsEnum(Department)
+
+  @IsString()
+  @ApiProperty({ example: 'IT', description: 'Department không được để trống (IT, HR, MARKETING, SALES) default: IT' })
+  @IsNotEmpty({ message: 'Department không được để trống' })
+  @IsEnum(Department, { message: 'Department không hợp lệ (IT, HR, MARKETING, SALES)' })
+  department!: Department;
+
+  // Thêm 1 field mới
+  @IsEnum(UserRole)
   @IsOptional()
-  department?: Department;
+  role?: UserRole;
 }

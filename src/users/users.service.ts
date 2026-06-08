@@ -5,6 +5,8 @@ import {
 } from '@nestjs/common';
 import { FirebaseService } from '../firebase/firebase.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { UpdateDepartmentDto } from './dto/update-department.dto';
+import { UpdateRoleDto } from './dto/update-role.dto';
 
 @Injectable()
 export class UsersService {
@@ -12,6 +14,18 @@ export class UsersService {
     private readonly prisma: PrismaService,
     private readonly firebaseService: FirebaseService,
   ) {}
+
+  async getProfile(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Không tìm thấy user.');
+    }
+
+    return user;
+  }
 
   async updateFcmToken(userId: string, fcmToken: string) {
     const user = await this.prisma.user.findUnique({
@@ -62,5 +76,33 @@ export class UsersService {
       userId: user.id,
       messageId,
     };
+  }
+
+  // 1. Hàm cập nhật ROLE (Dành cho Admin)
+  async updateRole(id: string, dto: UpdateRoleDto) {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) throw new NotFoundException('Không tìm thấy nhân viên này');
+
+    const updated = await this.prisma.user.update({
+      where: { id },
+      data: { role: dto.role },
+    });
+
+    const { password, ...result } = updated;
+    return result;
+  }
+
+  // 2. Hàm cập nhật DEPARTMENT (Dành cho Manager)
+  async updateDepartment(id: string, dto: UpdateDepartmentDto) {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user) throw new NotFoundException('Không tìm thấy nhân viên này');
+
+    const updated = await this.prisma.user.update({
+      where: { id },
+      data: { department: dto.department },
+    });
+
+    const { password, ...result } = updated;
+    return result;
   }
 }
