@@ -13,6 +13,7 @@ import { CronModule } from './cron/cron.module';
 import { StorageModule } from './storage/storage.module';
 import { FirebaseModule } from './firebase/firebase.module';
 import { UsersModule } from './users/users.module';
+import { LeavesModule } from './leaves/leaves.module';
 
 const nodeEnv = process.env.NODE_ENV;
 const envFilePath =
@@ -35,6 +36,7 @@ const envFilePath =
     StorageModule,
     FirebaseModule,
     UsersModule,
+    LeavesModule,
   ],
   controllers: [AppController],
   providers: [

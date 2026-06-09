@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Injectable,
   InternalServerErrorException,
   ServiceUnavailableException,
@@ -48,6 +49,37 @@ export class SupabaseService {
 
     const { data } = this.getClient()
       .storage.from(this.bucketName)
+      .getPublicUrl(fileName);
+
+    return data.publicUrl;
+  }
+
+  async uploadLeaveDocument(file: Express.Multer.File): Promise<string> {
+    const ALLOWED_MIMETYPES = ['application/pdf', 'image/jpeg', 'image/png'];
+    if (!ALLOWED_MIMETYPES.includes(file.mimetype)) {
+      throw new BadRequestException(
+        'Chỉ chấp nhận file PDF, JPG hoặc PNG',
+      );
+    }
+
+    const extension = extname(file.originalname);
+    const fileName  = `${Date.now()}-${Math.round(Math.random() * 1e9)}${extension}`;
+
+    const { error } = await this.getClient()
+      .storage.from('leave-document')
+      .upload(fileName, file.buffer, {
+        contentType: file.mimetype,
+        upsert: false,
+      });
+
+    if (error) {
+      throw new InternalServerErrorException(
+        `Upload leave document failed: ${error.message}`,
+      );
+    }
+
+    const { data } = this.getClient()
+      .storage.from('leave-document')
       .getPublicUrl(fileName);
 
     return data.publicUrl;

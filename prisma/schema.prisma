@@ -50,6 +50,20 @@ enum InvoiceStatus {
   OVERDUE
 }
 
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum LeaveType {
+  ANNUAL   // Phép năm
+  UNPAID   // Không lương
+  MARRIAGE // Kết hôn
+  MEDICAL  // Nghỉ ốm
+}
+
 // ==========================================
 // 2. DATABASE MODELS
 // ==========================================
@@ -59,28 +73,33 @@ model User {
   email      String     @unique
   fullName   String
   password   String
-  avatarUrl  String? // Cho phép null nếu user chưa cập nhật avatar
+  avatarUrl  String?
   department Department
   role       UserRole   @default(EMPLOYEE)
   isActive   Boolean    @default(true)
-  fcmToken   String? // Giữ lại từ hệ thống thông báo cũ của bạn
+  fcmToken   String?
 
-  // Các mối quan hệ 1-Nhiều (Relations)
+  // Relations - Social
   invoices  Invoice[]
   posts     Post[]
   comments  Comment[]
   reactions PostReaction[]
   mentions  CommentMention[]
 
+  // Relations - e-Leave
+  leaveBalances  LeaveBalance[]
+  leaveRequests  LeaveRequest[]
+  approvedLeaves LeaveRequest[] @relation("ApprovedRequests")
+
   createdAt DateTime @default(now())
 
-  @@map("users") // Ánh xạ tên bảng viết thường dưới PostgreSQL
+  @@map("users")
 }
 
 model Invoice {
   id        Int           @id @default(autoincrement())
   amount    Float
-  status    InvoiceStatus @default(PENDING) // Đã chuẩn hóa sang Enum nghiêm ngặt
+  status    InvoiceStatus @default(PENDING)
   userId    String
   user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime      @default(now())
@@ -91,15 +110,15 @@ model Invoice {
 model Post {
   id        Int            @id @default(autoincrement())
   title     String
-  content   String         @db.Text // Kiểu dữ liệu văn bản dài (Text) thay vì VARCHAR
-  imageUrls String[] // Mảng chứa danh sách link ảnh đính kèm bài viết
+  content   String         @db.Text
+  imageUrls String[]
   category  PostCategory
   authorId  String
   author    User           @relation(fields: [authorId], references: [id], onDelete: Cascade)
   comments  Comment[]
   reactions PostReaction[]
   createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt // Tự động cập nhật thời gian khi có lệnh sửa
+  updatedAt DateTime       @updatedAt
 
   @@map("posts")
 }
@@ -127,7 +146,7 @@ model PostReaction {
   type      ReactionType
   createdAt DateTime     @default(now())
 
-  @@unique([postId, userId]) // 🛡️ Cạm bẫy chặn trùng: Một người chỉ được thả tim 1 lần trên 1 bài
+  @@unique([postId, userId])
   @@map("post_reactions")
 }
 
@@ -140,4 +159,40 @@ model CommentMention {
   createdAt       DateTime @default(now())
 
   @@map("comment_mentions")
+}
+
+// ==========================================
+// 3. e-LEAVE MODELS
+// ==========================================
+
+model LeaveBalance {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  leaveType LeaveType
+  allocated Float
+  used      Float     @default(0.0)
+  year      Int
+
+  @@unique([userId, leaveType, year])
+  @@map("leave_balances")
+}
+
+model LeaveRequest {
+  id          String      @id @default(uuid())
+  userId      String
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  leaveType   LeaveType
+  startDate   DateTime
+  endDate     DateTime
+  totalDays   Float
+  reason      String
+  documentUrl String?
+  status      LeaveStatus @default(PENDING)
+  approvedById String?
+  approvedBy   User?       @relation("ApprovedRequests", fields: [approvedById], references: [id])
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@map("leave_requests")
 }

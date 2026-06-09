@@ -1,0 +1,344 @@
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { LeaveStatus, LeaveType } from '../../generated/prisma/client';
+import { PrismaService } from '../prisma/prisma.service';
+import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
+import { UpdateLeaveStatusDto } from './dto/update-leave-status.dto';
+
+@Injectable()
+export class LeavesService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  // ----------------------------------------------------------------
+  // 1. TẠO ĐƠN XIN NGHỈ
+  // ----------------------------------------------------------------
+
+  async createRequest(userId: string, dto: CreateLeaveRequestDto) {
+    const start = new Date(dto.startDate);
+    const end   = new Date(dto.endDate);
+
+    this.validateDates(start, end);
+
+    const totalDays = this.calculateWorkingDays(start, end);
+
+    await this.validateLeaveBalance(userId, dto.leaveType, totalDays);
+
+    return this.prisma.leaveRequest.create({
+      data: {
+        userId,
+        leaveType:   dto.leaveType,
+        startDate:   start,
+        endDate:     end,
+        totalDays,
+        reason:      dto.reason,
+        documentUrl: dto.documentUrl ?? null,
+        status:      LeaveStatus.PENDING,
+      },
+    });
+  }
+
+  // ----------------------------------------------------------------
+  // 2. XEM QUỸ PHÉP
+  // ----------------------------------------------------------------
+
+  async getBalance(userId: string) {
+    const year     = new Date().getFullYear();
+    const balances = await this.prisma.leaveBalance.findMany({
+      where: { userId, year },
+    });
+
+    return balances.map((b) => ({
+      leaveType: b.leaveType,
+      allocated: b.allocated,
+      used:      b.used,
+      remaining: parseFloat((b.allocated - b.used).toFixed(1)),
+    }));
+  }
+
+  // ----------------------------------------------------------------
+  // 3. LỊCH SỬ ĐƠN CỦA BẢN THÂN
+  // ----------------------------------------------------------------
+
+  async getMyRequests(userId: string) {
+    return this.prisma.leaveRequest.findMany({
+      where:   { userId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  // ----------------------------------------------------------------
+  // 4. LỊCH TOÀN CÔNG TY (mode: week | month)
+  // ----------------------------------------------------------------
+
+  async getOfficeOverview(mode: 'week' | 'month') {
+    const now  = new Date();
+    let rangeStart: Date;
+    let rangeEnd: Date;
+
+    if (mode === 'week') {
+      // Đầu tuần (Thứ 2) → cuối tuần (CN)
+      const day    = now.getDay(); // 0=CN, 1=T2...
+      const diff   = day === 0 ? -6 : 1 - day;
+      rangeStart   = new Date(now);
+      rangeStart.setDate(now.getDate() + diff);
+      rangeStart.setHours(0, 0, 0, 0);
+
+      rangeEnd = new Date(rangeStart);
+      rangeEnd.setDate(rangeStart.getDate() + 6);
+      rangeEnd.setHours(23, 59, 59, 999);
+    } else {
+      // Đầu tháng → cuối tháng
+      rangeStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+      rangeEnd   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    }
+
+    return this.prisma.leaveRequest.findMany({
+      where: {
+        status:    LeaveStatus.APPROVED,
+        startDate: { lte: rangeEnd },
+        endDate:   { gte: rangeStart },
+      },
+      include: {
+        user: {
+          select: {
+            id:        true,
+            fullName:  true,
+            avatarUrl: true,
+            department: true,
+          },
+        },
+      },
+      orderBy: { startDate: 'asc' },
+    });
+  }
+
+  // ----------------------------------------------------------------
+  // 5. HỦY ĐƠN (bởi chính nhân viên)
+  // ----------------------------------------------------------------
+
+  async cancelRequest(requestId: string, userId: string) {
+    const request = await this.prisma.leaveRequest.findUnique({
+      where: { id: requestId },
+    });
+
+    if (!request) {
+      throw new NotFoundException('Không tìm thấy đơn xin nghỉ');
+    }
+
+    if (request.userId !== userId) {
+      throw new ForbiddenException('Bạn không có quyền hủy đơn này');
+    }
+
+    if (
+      request.status !== LeaveStatus.PENDING &&
+      request.status !== LeaveStatus.APPROVED
+    ) {
+      throw new BadRequestException(
+        'Chỉ có thể hủy đơn đang ở trạng thái PENDING hoặc APPROVED',
+      );
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const startDay = new Date(request.startDate);
+    startDay.setHours(0, 0, 0, 0);
+
+    if (startDay <= today) {
+      throw new BadRequestException(
+        'Không thể hủy đơn đã bắt đầu hoặc đã diễn ra',
+      );
+    }
+
+    // Transaction: hủy đơn + hoàn trả quỹ phép nếu đã APPROVED
+    return this.prisma.$transaction(async (tx) => {
+      if (request.status === LeaveStatus.APPROVED) {
+        await tx.leaveBalance.updateMany({
+          where: {
+            userId:    request.userId,
+            leaveType: request.leaveType,
+            year:      request.startDate.getFullYear(),
+          },
+          data: {
+            used: { decrement: request.totalDays },
+          },
+        });
+      }
+
+      return tx.leaveRequest.update({
+        where: { id: requestId },
+        data:  { status: LeaveStatus.CANCELLED },
+      });
+    });
+  }
+
+  // ----------------------------------------------------------------
+  // 6. DUYỆT / TỪ CHỐI ĐƠN (bởi Manager/Admin)
+  // ----------------------------------------------------------------
+
+  async updateStatus(
+    requestId:  string,
+    approverId: string,
+    dto:        UpdateLeaveStatusDto,
+  ) {
+    const request = await this.prisma.leaveRequest.findUnique({
+      where: { id: requestId },
+    });
+
+    if (!request) {
+      throw new NotFoundException('Không tìm thấy đơn xin nghỉ');
+    }
+
+    if (request.status !== LeaveStatus.PENDING) {
+      throw new BadRequestException(
+        `Đơn này đã được xử lý (trạng thái hiện tại: ${request.status})`,
+      );
+    }
+
+    // Transaction: cập nhật đơn + trừ quỹ phép nếu APPROVED
+    return this.prisma.$transaction(async (tx) => {
+      if (dto.status === LeaveStatus.APPROVED) {
+        const year    = request.startDate.getFullYear();
+        const balance = await tx.leaveBalance.findUnique({
+          where: {
+            userId_leaveType_year: {
+              userId:    request.userId,
+              leaveType: request.leaveType,
+              year,
+            },
+          },
+        });
+
+        if (!balance) {
+          throw new NotFoundException(
+            'Không tìm thấy quỹ phép của nhân viên cho năm tương ứng',
+          );
+        }
+
+        const remaining = balance.allocated - balance.used;
+        if (remaining < request.totalDays) {
+          throw new BadRequestException(
+            `Nhân viên không đủ quỹ phép. Còn lại: ${remaining} ngày`,
+          );
+        }
+
+        await tx.leaveBalance.update({
+          where: {
+            userId_leaveType_year: {
+              userId:    request.userId,
+              leaveType: request.leaveType,
+              year,
+            },
+          },
+          data: { used: { increment: request.totalDays } },
+        });
+      }
+
+      return tx.leaveRequest.update({
+        where: { id: requestId },
+        data:  {
+          status:      dto.status,
+          approvedById: approverId,
+        },
+      });
+    });
+  }
+
+  // ----------------------------------------------------------------
+  // PRIVATE HELPERS
+  // ----------------------------------------------------------------
+
+  private calculateWorkingDays(startDate: Date, endDate: Date): number {
+    let count       = 0;
+    const cursor    = new Date(startDate);
+    cursor.setHours(0, 0, 0, 0);
+
+    const end = new Date(endDate);
+    end.setHours(0, 0, 0, 0);
+
+    while (cursor <= end) {
+      const day = cursor.getDay();
+      if (day !== 0 && day !== 6) count++;
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    if (count === 0) {
+      throw new BadRequestException(
+        'Khoảng thời gian đăng ký chỉ chứa ngày cuối tuần',
+      );
+    }
+
+    return count;
+  }
+
+  private validateDates(start: Date, end: Date): void {
+    if (isNaN(start.getTime())) {
+      throw new BadRequestException('startDate không hợp lệ');
+    }
+    if (isNaN(end.getTime())) {
+      throw new BadRequestException('endDate không hợp lệ');
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const startDay = new Date(start);
+    startDay.setHours(0, 0, 0, 0);
+
+    if (startDay < today) {
+      throw new BadRequestException('startDate phải từ hôm nay trở đi');
+    }
+
+    const endDay = new Date(end);
+    endDay.setHours(0, 0, 0, 0);
+
+    if (endDay < startDay) {
+      throw new BadRequestException(
+        'endDate phải lớn hơn hoặc bằng startDate',
+      );
+    }
+  }
+
+  private async validateLeaveBalance(
+    userId:    string,
+    leaveType: LeaveType,
+    totalDays: number,
+  ): Promise<void> {
+    const currentYear  = new Date().getFullYear();
+    const currentMonth = new Date().getMonth() + 1;
+
+    const balance = await this.prisma.leaveBalance.findUnique({
+      where: {
+        userId_leaveType_year: { userId, leaveType, year: currentYear },
+      },
+    });
+
+    if (!balance) {
+      throw new NotFoundException(
+        'Không tìm thấy quỹ phép của bạn cho năm nay',
+      );
+    }
+
+    let available: number;
+
+    if (leaveType === LeaveType.ANNUAL) {
+      const accrued = Math.min(currentMonth, balance.allocated);
+      available     = accrued - balance.used;
+      if (available < totalDays) {
+        throw new BadRequestException(
+          `Số ngày phép năm tích lũy hiện tại không đủ. Bạn chỉ có ${available} ngày khả dụng.`,
+        );
+      }
+    } else {
+      available = balance.allocated - balance.used;
+      if (available < totalDays) {
+        throw new BadRequestException(
+          `Số ngày phép không đủ. Bạn chỉ có ${available} ngày khả dụng cho loại phép này.`,
+        );
+      }
+    }
+  }
+}
