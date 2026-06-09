@@ -28,6 +28,8 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth/jwt-auth.guard';
 import { ManagerGuard } from '../auth/guards/manager.guard';
 import { SupabaseService } from '../storage/supabase.service';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
+import { GetMyRequestsDto } from './dto/get-my-requests.dto';
+import { GetOfficeOverviewDto } from './dto/get-office-overview.dto';
 import { UpdateLeaveStatusDto } from './dto/update-leave-status.dto';
 import { LeavesService } from './leaves.service';
 
@@ -66,9 +68,9 @@ export class LeavesController {
   // ----------------------------------------------------------------
   @Get('my-requests')
   @ApiOperation({ summary: 'Lịch sử đơn xin nghỉ của bản thân' })
-  getMyRequests(@Req() req: Request) {
+  getMyRequests(@Query() dto: GetMyRequestsDto, @Req() req: Request) {
     const userId = req['user'].sub as string;
-    return this.leavesService.getMyRequests(userId);
+    return this.leavesService.getMyRequests(userId, dto);
   }
 
   // ----------------------------------------------------------------
@@ -76,15 +78,8 @@ export class LeavesController {
   // ----------------------------------------------------------------
   @Get('office-overview')
   @ApiOperation({ summary: 'Lịch nghỉ toàn công ty theo tuần hoặc tháng' })
-  @ApiQuery({
-    name:        'mode',
-    enum:        ['week', 'month'],
-    required:    false,
-    description: 'Chế độ xem: week (tuần hiện tại) hoặc month (tháng hiện tại). Mặc định: week',
-  })
-  getOfficeOverview(@Query('mode') mode: 'week' | 'month' = 'week') {
-    const safeMode = mode === 'month' ? 'month' : 'week';
-    return this.leavesService.getOfficeOverview(safeMode);
+  getOfficeOverview(@Query() dto: GetOfficeOverviewDto) {
+    return this.leavesService.getOfficeOverview(dto);
   }
 
   // ----------------------------------------------------------------

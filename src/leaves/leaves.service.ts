@@ -7,7 +7,10 @@ import {
 import { LeaveStatus, LeaveType } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
+import { GetMyRequestsDto } from './dto/get-my-requests.dto';
+import { GetOfficeOverviewDto } from './dto/get-office-overview.dto';
 import { UpdateLeaveStatusDto } from './dto/update-leave-status.dto';
+import { PageDto, PageMetaDto } from '../common/pagination';
 
 @Injectable()
 export class LeavesService {
@@ -63,23 +66,39 @@ export class LeavesService {
   // 3. LỊCH SỬ ĐƠN CỦA BẢN THÂN
   // ----------------------------------------------------------------
 
-  async getMyRequests(userId: string) {
-    return this.prisma.leaveRequest.findMany({
-      where:   { userId },
-      orderBy: { createdAt: 'desc' },
-    });
+  async getMyRequests(userId: string, dto: GetMyRequestsDto) {
+    const whereCondition = { userId };
+
+    const [items, itemCount] = await Promise.all([
+      this.prisma.leaveRequest.findMany({
+        where:   whereCondition,
+        skip:    dto.skip,
+        take:    dto.limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.leaveRequest.count({
+        where: whereCondition,
+      }),
+    ]);
+
+    const meta = new PageMetaDto({ pageOptionsDto: dto, itemCount });
+    return new PageDto(items, meta);
   }
 
   // ----------------------------------------------------------------
   // 4. LỊCH TOÀN CÔNG TY (mode: week | month)
   // ----------------------------------------------------------------
 
-  async getOfficeOverview(mode: 'week' | 'month') {
+  async getOfficeOverview(dto: GetOfficeOverviewDto) {
     const now  = new Date();
     let rangeStart: Date;
     let rangeEnd: Date;
 
-    if (mode === 'week') {
+    if (dto.mode === 'month') {
+      // Đầu tháng → cuối tháng
+      rangeStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+      rangeEnd   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    } else {
       // Đầu tuần (Thứ 2) → cuối tuần (CN)
       const day    = now.getDay(); // 0=CN, 1=T2...
       const diff   = day === 0 ? -6 : 1 - day;
@@ -90,30 +109,38 @@ export class LeavesService {
       rangeEnd = new Date(rangeStart);
       rangeEnd.setDate(rangeStart.getDate() + 6);
       rangeEnd.setHours(23, 59, 59, 999);
-    } else {
-      // Đầu tháng → cuối tháng
-      rangeStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-      rangeEnd   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
     }
 
-    return this.prisma.leaveRequest.findMany({
-      where: {
-        status:    LeaveStatus.APPROVED,
-        startDate: { lte: rangeEnd },
-        endDate:   { gte: rangeStart },
-      },
-      include: {
-        user: {
-          select: {
-            id:        true,
-            fullName:  true,
-            avatarUrl: true,
-            department: true,
+    const whereCondition = {
+      status:    LeaveStatus.APPROVED,
+      startDate: { lte: rangeEnd },
+      endDate:   { gte: rangeStart },
+    };
+
+    const [items, itemCount] = await Promise.all([
+      this.prisma.leaveRequest.findMany({
+        where: whereCondition,
+        skip:    dto.skip,
+        take:    dto.limit,
+        include: {
+          user: {
+            select: {
+              id:        true,
+              fullName:  true,
+              avatarUrl: true,
+              department: true,
+            },
           },
         },
-      },
-      orderBy: { startDate: 'asc' },
-    });
+        orderBy: { startDate: 'asc' },
+      }),
+      this.prisma.leaveRequest.count({
+        where: whereCondition,
+      }),
+    ]);
+
+    const meta = new PageMetaDto({ pageOptionsDto: dto, itemCount });
+    return new PageDto(items, meta);
   }
 
   // ----------------------------------------------------------------
