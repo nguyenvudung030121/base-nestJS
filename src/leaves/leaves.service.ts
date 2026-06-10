@@ -7,6 +7,7 @@ import {
 import { LeaveStatus, LeaveType } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
+import { GetManagerRequestsDto } from './dto/get-manager-requests.dto';
 import { GetMyRequestsDto } from './dto/get-my-requests.dto';
 import { GetOfficeOverviewDto } from './dto/get-office-overview.dto';
 import { UpdateLeaveStatusDto } from './dto/update-leave-status.dto';
@@ -112,7 +113,7 @@ export class LeavesService {
     }
 
     const whereCondition = {
-      status:    LeaveStatus.APPROVED,
+      status:    { in: [LeaveStatus.APPROVED, LeaveStatus.PENDING] },
       startDate: { lte: rangeEnd },
       endDate:   { gte: rangeStart },
     };
@@ -133,6 +134,74 @@ export class LeavesService {
           },
         },
         orderBy: { startDate: 'asc' },
+      }),
+      this.prisma.leaveRequest.count({
+        where: whereCondition,
+      }),
+    ]);
+
+    const meta = new PageMetaDto({ pageOptionsDto: dto, itemCount });
+    return new PageDto(items, meta);
+  }
+
+  // ----------------------------------------------------------------
+  // 4.5. DANH SÁCH ĐƠN XIN NGHỈ (dành cho Manager/Admin)
+  // ----------------------------------------------------------------
+
+  async getManagerRequests(dto: GetManagerRequestsDto) {
+    let rangeStart: Date;
+    let rangeEnd: Date;
+
+    if (dto.startDate) {
+      rangeStart = new Date(dto.startDate);
+      rangeStart.setHours(0, 0, 0, 0);
+    } else {
+      rangeStart = new Date();
+      rangeStart.setHours(0, 0, 0, 0);
+    }
+
+    if (dto.endDate) {
+      rangeEnd = new Date(dto.endDate);
+    } else {
+      rangeEnd = new Date(rangeStart);
+    }
+    rangeEnd.setHours(23, 59, 59, 999);
+
+    if (isNaN(rangeStart.getTime()) || isNaN(rangeEnd.getTime())) {
+      throw new BadRequestException('startDate hoặc endDate không hợp lệ');
+    }
+
+    if (rangeEnd < rangeStart) {
+      throw new BadRequestException(
+        'endDate phải lớn hơn hoặc bằng startDate',
+      );
+    }
+
+    const whereCondition = {
+      status: dto.status,
+      startDate: { lte: rangeEnd },
+      endDate:   { gte: rangeStart },
+      ...(dto.department && {
+        user: { department: dto.department },
+      }),
+    };
+
+    const [items, itemCount] = await Promise.all([
+      this.prisma.leaveRequest.findMany({
+        where: whereCondition,
+        skip:  dto.skip,
+        take:  dto.limit,
+        include: {
+          user: {
+            select: {
+              id:         true,
+              fullName:   true,
+              email:      true,
+              department: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
       }),
       this.prisma.leaveRequest.count({
         where: whereCondition,

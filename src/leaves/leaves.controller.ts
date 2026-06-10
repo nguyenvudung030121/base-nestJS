@@ -18,16 +18,15 @@ import {
   ApiBody,
   ApiConsumes,
   ApiOperation,
-  ApiQuery,
   ApiTags,
 } from '@nestjs/swagger';
 import { Request } from 'express';
 import { memoryStorage } from 'multer';
-import { AdminGuard } from '../auth/guards/admin.guard';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth/jwt-auth.guard';
-import { ManagerGuard } from '../auth/guards/manager.guard';
+import { ManagerOrAdminGuard } from '../auth/guards/manager-or-admin.guard';
 import { SupabaseService } from '../storage/supabase.service';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
+import { GetManagerRequestsDto } from './dto/get-manager-requests.dto';
 import { GetMyRequestsDto } from './dto/get-my-requests.dto';
 import { GetOfficeOverviewDto } from './dto/get-office-overview.dto';
 import { UpdateLeaveStatusDto } from './dto/update-leave-status.dto';
@@ -83,6 +82,18 @@ export class LeavesController {
   }
 
   // ----------------------------------------------------------------
+  // GET /leaves/manager/requests — [Manager/Admin] Danh sách đơn xin nghỉ
+  // ----------------------------------------------------------------
+  @Get('manager/requests')
+  @UseGuards(ManagerOrAdminGuard)
+  @ApiOperation({
+    summary: '[Manager/Admin] Danh sách đơn xin nghỉ của nhân viên (lọc theo trạng thái, phòng ban, khoảng ngày)',
+  })
+  getManagerRequests(@Query() dto: GetManagerRequestsDto) {
+    return this.leavesService.getManagerRequests(dto);
+  }
+
+  // ----------------------------------------------------------------
   // PATCH /leaves/:id/cancel — Hủy đơn (bởi chính nhân viên)
   // ----------------------------------------------------------------
   @Patch(':id/cancel')
@@ -96,7 +107,7 @@ export class LeavesController {
   // PATCH /leaves/:id/status — Duyệt / Từ chối đơn (Manager hoặc Admin)
   // ----------------------------------------------------------------
   @Patch(':id/status')
-  @UseGuards(ManagerGuard || AdminGuard)
+  @UseGuards(ManagerOrAdminGuard)
   @ApiOperation({ summary: '[Manager/Admin] Duyệt hoặc từ chối đơn xin nghỉ' })
   updateStatus(
     @Param('id') id: string,

@@ -28,7 +28,11 @@ async function bootstrap() {
     .build();
 
   const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('docs', app, document);
+  SwaggerModule.setup('docs', app, document, {
+    swaggerOptions: {
+      persistAuthorization: true, // Giữ Authorize token sau khi refresh trang
+    },
+  });
 
   // 5. Khởi chạy Server
   await app.listen(configService.get<number>('PORT') || 3000);
