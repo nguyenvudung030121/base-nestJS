@@ -258,7 +258,7 @@ export class LeavesService {
     const startDay = new Date(request.startDate);
     startDay.setHours(0, 0, 0, 0);
 
-    if (startDay <= today) {
+    if (request.status === LeaveStatus.APPROVED && startDay <= today) {
       throw new BadRequestException(
         'Không thể hủy đơn đã bắt đầu hoặc đã diễn ra',
       );
