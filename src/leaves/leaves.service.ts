@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { LeaveStatus, LeaveType, Prisma } from '../../generated/prisma/client';
+import { LeaveStatus, LeaveType, Prisma, UserRole } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
 import { GetManagerRequestsDto } from './dto/get-manager-requests.dto';
@@ -234,13 +234,28 @@ export class LeavesService {
   async cancelRequest(requestId: string, userId: string) {
     const request = await this.prisma.leaveRequest.findUnique({
       where: { id: requestId },
+      include: { user: true },
     });
 
     if (!request) {
       throw new NotFoundException('Không tìm thấy đơn xin nghỉ');
     }
 
-    if (request.userId !== userId) {
+    const requester = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!requester) {
+      throw new ForbiddenException('Người dùng không hợp lệ');
+    }
+
+    const isOwner = request.userId === userId;
+    const isAdmin = requester.role === UserRole.ADMIN;
+    const isManagerInSameDept =
+      requester.role === UserRole.MANAGER &&
+      request.user?.department === requester.department;
+
+    if (!isOwner && !isAdmin && !isManagerInSameDept) {
       throw new ForbiddenException('Bạn không có quyền hủy đơn này');
     }
 
