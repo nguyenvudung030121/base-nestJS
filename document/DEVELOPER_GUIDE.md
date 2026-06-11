@@ -58,13 +58,37 @@ src/
 │       ├── update-fcm-token.dto.ts
 │       └── test-push.dto.ts
 │
-└── invoices/                 # Module Quản lý Hóa Đơn (Invoices)
-    ├── invoices.module.ts    # Khai báo Invoices module, import AuthModule để dùng JwtAuthGuard
-    ├── invoices.controller.ts# Định nghĩa endpoints GET, POST /invoices, POST /invoices/upload
-    ├── invoices.service.ts   # Xử lý logic nghiệp vụ (CRUD + phân trang)
+├── invoices/                 # Module Quản lý Hóa Đơn (Invoices)
+│   ├── invoices.module.ts    # Khai báo Invoices module, import AuthModule để dùng JwtAuthGuard
+│   ├── invoices.controller.ts# Định nghĩa endpoints GET, POST /invoices, POST /invoices/upload
+│   ├── invoices.service.ts   # Xử lý logic nghiệp vụ (CRUD + phân trang)
+│   └── dto/
+│       ├── create-invoice.dto.ts  # Validate dữ liệu tạo hóa đơn mới
+│       └── get-invoices.dto.ts    # Query params phân trang + lọc (extends PageOptionsDto)
+│
+└── leaves/                   # Module Quản lý Nghỉ Phép (e-Leave)
+    ├── leaves.module.ts      # Import AuthModule để dùng JwtAuthGuard / ManagerOrAdminGuard
+    ├── leaves.controller.ts  # POST /leaves, GET /leaves/balance, /my-requests, /office-overview,
+    │                          # GET /leaves/manager/requests, PATCH /leaves/:id/cancel, /:id/status,
+    │                          # POST /leaves/upload-document
+    ├── leaves.service.ts     # Logic tạo đơn, giữ/hoàn quỹ phép, duyệt/từ chối, danh sách cho manager
     └── dto/
-        ├── create-invoice.dto.ts  # Validate dữ liệu tạo hóa đơn mới
-        └── get-invoices.dto.ts    # Query params phân trang + lọc (extends PageOptionsDto)
+        ├── create-leave-request.dto.ts   # Validate tạo đơn xin nghỉ (leaveType, startDate, endDate, reason...)
+        ├── get-my-requests.dto.ts        # Query phân trang lịch sử đơn của bản thân
+        ├── get-office-overview.dto.ts    # Query lịch nghỉ toàn công ty (mode: week | month)
+        ├── get-manager-requests.dto.ts   # Query phân trang cho Manager/Admin (status, department, date range)
+        └── update-leave-status.dto.ts    # Validate duyệt/từ chối đơn (APPROVED | REJECTED)
+```
+
+Ngoài ra, thư mục `src/auth/guards/` còn có các guard phân quyền theo `UserRole`:
+
+```text
+src/auth/guards/
+├── jwt-auth/
+│   └── jwt-auth.guard.ts      # Xác thực JWT, gắn user vào request
+├── admin.guard.ts              # Chỉ cho phép role ADMIN
+├── manager.guard.ts            # Chỉ cho phép role MANAGER
+└── manager-or-admin.guard.ts   # Cho phép role MANAGER hoặc ADMIN
 ```
 
 ---
@@ -92,6 +116,41 @@ erDiagram
         Int userId FK "Khóa ngoại liên kết bảng User"
     }
     USER ||--o{ INVOICE : "Một User có nhiều hóa đơn (1-n)"
+```
+
+### 2.1. Mô hình e-Leave (Nghỉ phép)
+
+```mermaid
+erDiagram
+    USER {
+        String id PK
+        Department department "IT | HR | MARKETING | SALES"
+        UserRole role "ADMIN | MANAGER | EMPLOYEE, mặc định EMPLOYEE"
+    }
+    LEAVE_BALANCE {
+        String id PK
+        String userId FK
+        LeaveType leaveType "ANNUAL | UNPAID | MARRIAGE | MEDICAL"
+        Float allocated "Tổng số ngày được cấp"
+        Float used "Số ngày đã dùng / đang giữ chỗ"
+        Int year
+    }
+    LEAVE_REQUEST {
+        String id PK
+        String userId FK
+        LeaveType leaveType
+        DateTime startDate
+        DateTime endDate
+        Float totalDays "Số ngày làm việc (loại trừ T7, CN)"
+        String reason
+        String documentUrl "Nullable"
+        LeaveStatus status "PENDING | APPROVED | REJECTED | CANCELLED"
+        String approvedById FK "Nullable, User đã duyệt/từ chối"
+        DateTime createdAt
+    }
+    USER ||--o{ LEAVE_BALANCE : "Quỹ phép theo từng loại + năm (unique: userId, leaveType, year)"
+    USER ||--o{ LEAVE_REQUEST : "Đơn xin nghỉ đã tạo"
+    USER ||--o{ LEAVE_REQUEST : "Đơn đã duyệt/từ chối (approvedBy)"
 ```
 
 ---
@@ -393,6 +452,71 @@ Luồng xử lý:
 4. Nếu user chưa có FCM token, trả `400`.
 5. Nếu hợp lệ, gọi `FirebaseService.sendPushNotification(token, title, body)`.
 
+### 5.8. Module e-Leave (Quản lý nghỉ phép)
+
+`LeavesModule` import `AuthModule` để dùng `JwtAuthGuard` (áp toàn bộ controller) và `ManagerOrAdminGuard` (áp riêng cho các endpoint của Manager/Admin).
+
+#### 5.8.1. Phân quyền bằng Guard theo `UserRole`
+
+| Guard                | Điều kiện cho phép                          | Dùng ở đâu |
+| -------------------- | -------------------------------------------- | ---------- |
+| `JwtAuthGuard`        | Có Bearer token hợp lệ                       | Toàn bộ `/leaves/*` (controller-level) |
+| `ManagerOrAdminGuard` | `request.user.role` là `MANAGER` hoặc `ADMIN`, ngược lại `403 Forbidden` | `GET /leaves/manager/requests`, `PATCH /leaves/:id/status` |
+
+> [!IMPORTANT]
+> Không viết `@UseGuards(ManagerGuard || AdminGuard)`. Trong JS, `A || B` luôn trả về `A` nếu `A` truthy (class luôn truthy), nên decorator chỉ áp `ManagerGuard` — tài khoản `ADMIN` sẽ bị `403` oan. Khi cần "role A HOẶC role B", phải viết một guard riêng kiểm tra `OR` trong `canActivate()` (xem `manager-or-admin.guard.ts`), không dùng `||` giữa hai class guard.
+
+#### 5.8.2. Cơ chế quỹ phép (Leave Balance) — Giữ chỗ khi tạo đơn
+
+Mỗi user có nhiều dòng `LeaveBalance` (unique theo `userId + leaveType + year`), gồm `allocated` (tổng được cấp) và `used` (đã dùng/đang giữ chỗ). Số ngày còn lại = `allocated - used`.
+
+**Nguyên tắc: `used` được cập nhật ngay khi đơn chuyển trạng thái, không chờ đến lúc Manager duyệt.**
+
+```mermaid
+stateDiagram-v2
+    [*] --> PENDING: createRequest()\nholdLeaveBalance(): used += totalDays\n(throw nếu vượt quota)
+    PENDING --> APPROVED: updateStatus(APPROVED)\nKhông đổi used (đã trừ từ lúc tạo)
+    PENDING --> REJECTED: updateStatus(REJECTED)\nreleaseLeaveBalance(): used -= totalDays
+    PENDING --> CANCELLED: cancelRequest()\nreleaseLeaveBalance(): used -= totalDays
+    APPROVED --> CANCELLED: cancelRequest()\n(chỉ khi startDate > hôm nay)\nreleaseLeaveBalance(): used -= totalDays
+```
+
+Chi tiết từng API:
+
+- **`POST /leaves`** (`createRequest`): validate ngày hợp lệ → tính `totalDays` (loại trừ T7/CN) → trong 1 transaction, gọi `holdLeaveBalance()` để kiểm tra quota còn đủ không (riêng `ANNUAL` dùng accrual theo tháng: `Math.min(currentMonth, allocated) - used`), nếu đủ thì `used += totalDays` ngay, rồi mới tạo `LeaveRequest` với `status: PENDING`. Nếu không đủ quota → `400 BadRequestException`, không tạo đơn.
+- **`PATCH /leaves/:id/status`** (`updateStatus`, Manager/Admin):
+  - `APPROVED`: chỉ đổi `status` + `approvedById`. Không động vào `used` vì đã trừ từ lúc tạo.
+  - `REJECTED`: gọi `releaseLeaveBalance()` hoàn lại `used -= totalDays`, rồi đổi `status` + `approvedById`.
+  - Chỉ cho phép xử lý đơn đang `PENDING`, ngược lại `400 BadRequestException`.
+- **`PATCH /leaves/:id/cancel`** (`cancelRequest`, chính chủ): chỉ hủy được đơn `PENDING` hoặc `APPROVED`, và chỉ khi `startDate` > hôm nay. Luôn gọi `releaseLeaveBalance()` để hoàn `used` (vì cả PENDING lẫn APPROVED đều đã bị trừ từ lúc tạo).
+
+> [!IMPORTANT]
+> Vì cơ chế "giữ chỗ" này được thêm SAU khi đã có dữ liệu cũ, các `LeaveRequest` tạo trước thời điểm fix sẽ có `used` không phản ánh đúng. Nếu cancel các đơn cũ này, `used` có thể bị âm — cần backfill/reset thủ công qua Prisma (`leaveBalance.update({ data: { used: 0 } })`) cho từng `userId + leaveType + year` bị lệch.
+
+#### 5.8.3. API danh sách cho Manager/Admin
+
+`GET /leaves/manager/requests` (`getManagerRequests`, yêu cầu `ManagerOrAdminGuard`):
+
+- Query params (đều optional, kế thừa `PageOptionsDto` cho `page`/`limit`):
+  - `status`: lọc theo `LeaveStatus`, mặc định `PENDING`.
+  - `department`: lọc theo `Department` của user nộp đơn (qua `include.user`).
+  - `startDate` / `endDate`: khoảng ngày lọc theo `startDate <= endDate đơn` và `endDate >= startDate đơn` (overlap). Mặc định cả hai = ngày hiện tại (00:00 → 23:59).
+- Response `include.user` trả về `{ id, fullName, email, department }` thay vì chỉ `userId`.
+- Sắp xếp `createdAt: 'desc'`, trả về dạng `PageDto` (xem mục 4).
+- Validate: `startDate`/`endDate` không hợp lệ hoặc `endDate < startDate` → `400 BadRequestException`.
+
+#### 5.8.4. Cron tự động duyệt đơn quá hạn
+
+`CronService.autoApproveStaleLeaveRequests()` chạy mỗi giờ (`@Cron(CronExpression.EVERY_HOUR)`):
+
+- Tìm các `LeaveRequest` có `status: PENDING` và `createdAt <= now - 1 ngày` (Manager/Admin chưa xử lý sau 1 ngày kể từ lúc nộp).
+- `updateMany` chuyển thẳng sang `status: APPROVED`.
+- Không động vào `LeaveBalance.used` vì đã được giữ chỗ từ lúc `createRequest()`.
+
+```text
+[CronJob] Đã quét và tự động duyệt 2 đơn xin nghỉ quá hạn!
+```
+
 ---
 
 ## 6. Hướng Dẫn Cấu Hình & Chạy Dự Án (Getting Started)
@@ -577,7 +701,47 @@ Body `POST /users/test-push`:
 }
 ```
 
-### 7.3. File REST Client (.http)
+### 7.3. API e-Leave (Nghỉ phép)
+
+| Method | Endpoint                   | Auth Bearer | Quyền          | Mục đích                                                       |
+| ------ | -------------------------- | ----------- | -------------- | --------------------------------------------------------------- |
+| POST   | `/leaves`                   | Có          | Mọi user        | Tạo đơn xin nghỉ (giữ chỗ quỹ phép ngay nếu đủ quota)            |
+| GET    | `/leaves/balance`           | Có          | Mọi user        | Xem quỹ phép năm hiện tại của bản thân                           |
+| GET    | `/leaves/my-requests`       | Có          | Mọi user        | Lịch sử đơn xin nghỉ của bản thân (phân trang)                   |
+| GET    | `/leaves/office-overview`   | Có          | Mọi user        | Lịch nghỉ toàn công ty theo tuần/tháng (status PENDING+APPROVED) |
+| GET    | `/leaves/manager/requests`  | Có          | MANAGER, ADMIN  | Danh sách đơn xin nghỉ, lọc theo status/department/khoảng ngày  |
+| PATCH  | `/leaves/:id/cancel`        | Có          | Chính chủ       | Hủy đơn `PENDING`/`APPROVED` (chỉ khi chưa tới `startDate`)      |
+| PATCH  | `/leaves/:id/status`        | Có          | MANAGER, ADMIN  | Duyệt (`APPROVED`) hoặc từ chối (`REJECTED`) đơn `PENDING`       |
+| POST   | `/leaves/upload-document`   | Có          | Mọi user        | Upload file minh chứng (PDF/JPG/PNG) lên Supabase Storage        |
+
+Body `POST /leaves`:
+
+```json
+{
+  "leaveType": "ANNUAL",
+  "startDate": "2026-07-01",
+  "endDate": "2026-07-03",
+  "reason": "Đi khám sức khỏe định kỳ",
+  "documentUrl": "https://storage.company.com/docs/medical-certificate.pdf"
+}
+```
+
+Body `PATCH /leaves/:id/status`:
+
+```json
+{
+  "status": "APPROVED",
+  "reason": "Nhân sự không đủ trong giai đoạn này"
+}
+```
+
+Query `GET /leaves/manager/requests`:
+
+```http
+GET /leaves/manager/requests?status=PENDING&department=IT&startDate=2026-06-01&endDate=2026-06-30&page=1&limit=10
+```
+
+### 7.4. File REST Client (.http)
 
 Bạn cũng có thể test nhanh thông qua file [test-requests.http](file:///Users/Shared/dung_data/BE/base-nestjs/base-backend/test-requests.http) nếu sử dụng công cụ mở rộng REST Client trong VS Code.
 Hãy làm theo thứ tự:
@@ -639,3 +803,12 @@ Các điểm mới liên quan đến push notification:
 - Thêm `UsersModule`, import `AuthModule` để resolve được `JwtAuthGuard` và `JwtService`.
 - Thêm API `PATCH /users/fcm-token` để Flutter app gửi FCM token sau khi user đăng nhập.
 - Thêm API tạm `POST /users/test-push` để lấy token trong DB và gọi `FirebaseService.sendPushNotification()`.
+
+### 8.5. Module e-Leave: API cho Manager + cơ chế giữ chỗ quỹ phép
+
+- Thêm `GET /leaves/manager/requests` cho Manager/Admin: lọc theo `status` (mặc định `PENDING`), `department`, khoảng `startDate`/`endDate` (mặc định ngày hiện tại), trả kèm `include.user` (`id`, `fullName`, `email`, `department`), sort `createdAt: 'desc'`, phân trang qua `PageDto`.
+- Thêm `ManagerOrAdminGuard` (`src/auth/guards/manager-or-admin.guard.ts`) và áp dụng cho `GET /leaves/manager/requests` + `PATCH /leaves/:id/status`, thay cho pattern sai `@UseGuards(ManagerGuard || AdminGuard)` (luôn chỉ áp `ManagerGuard` do toán tử `||` giữa hai class — xem mục 5.8.1).
+- Thay đổi cơ chế quỹ phép: `createRequest()` giờ trừ `used` ngay khi tạo đơn `PENDING` (giữ chỗ, có check quota), `cancelRequest()`/`updateStatus(REJECTED)` hoàn `used` qua `releaseLeaveBalance()`, `updateStatus(APPROVED)` không đổi `used` nữa (xem mục 5.8.2). Tránh trường hợp user tạo nhiều đơn `PENDING` vượt quá quỹ phép thực có.
+- Thêm cron `autoApproveStaleLeaveRequests()` (`EVERY_HOUR`): tự động chuyển đơn `PENDING` quá 1 ngày (`createdAt`) sang `APPROVED` nếu Manager/Admin chưa xử lý.
+- Bật `persistAuthorization: true` trong cấu hình Swagger (`main.ts`) để giữ Bearer token sau khi refresh trang `/docs`.
+- Tăng thời hạn access token JWT từ `3h` lên `1d` (`src/auth/auth.module.ts`).

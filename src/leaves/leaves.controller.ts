@@ -87,7 +87,8 @@ export class LeavesController {
   @Get('manager/requests')
   @UseGuards(ManagerOrAdminGuard)
   @ApiOperation({
-    summary: '[Manager/Admin] Danh sách đơn xin nghỉ của nhân viên (lọc theo trạng thái, phòng ban, khoảng ngày)',
+    summary:
+      '[Manager/Admin] Danh sách đơn xin nghỉ của nhân viên (lọc theo trạng thái, phòng ban, khoảng ngày)',
   })
   getManagerRequests(@Query() dto: GetManagerRequestsDto) {
     return this.leavesService.getManagerRequests(dto);

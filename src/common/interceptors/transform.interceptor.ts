@@ -18,9 +18,10 @@ export interface StandardResponse<T> {
 }
 
 @Injectable()
-export class TransformInterceptor<T>
-  implements NestInterceptor<T, StandardResponse<T>>
-{
+export class TransformInterceptor<T> implements NestInterceptor<
+  T,
+  StandardResponse<T>
+> {
   intercept(
     context: ExecutionContext,
     next: CallHandler,
@@ -49,7 +50,12 @@ export class TransformInterceptor<T>
         }
 
         // Phân trang: Nếu là PageDto (có items + meta) → đẩy meta lên ngang hàng với data
-        if (responseData && typeof responseData === 'object' && 'items' in responseData && 'meta' in responseData) {
+        if (
+          responseData &&
+          typeof responseData === 'object' &&
+          'items' in responseData &&
+          'meta' in responseData
+        ) {
           return {
             success: true,
             statusCode: response.statusCode,
@@ -82,7 +88,7 @@ export class TransformInterceptor<T>
       if (data instanceof Date) {
         return data;
       }
-      
+
       const copy = { ...data };
       if ('password' in copy) {
         delete copy.password;

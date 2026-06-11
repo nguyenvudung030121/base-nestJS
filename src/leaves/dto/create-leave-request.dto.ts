@@ -24,14 +24,20 @@ export class CreateLeaveRequestDto {
     description: 'Ngày bắt đầu nghỉ (ISO 8601)',
     example: '2026-07-01',
   })
-  @IsISO8601({}, { message: 'startDate phải là chuỗi ISO 8601 hợp lệ (vd: 2026-07-01)' })
+  @IsISO8601(
+    {},
+    { message: 'startDate phải là chuỗi ISO 8601 hợp lệ (vd: 2026-07-01)' },
+  )
   startDate: string;
 
   @ApiProperty({
     description: 'Ngày kết thúc nghỉ (ISO 8601)',
     example: '2026-07-03',
   })
-  @IsISO8601({}, { message: 'endDate phải là chuỗi ISO 8601 hợp lệ (vd: 2026-07-03)' })
+  @IsISO8601(
+    {},
+    { message: 'endDate phải là chuỗi ISO 8601 hợp lệ (vd: 2026-07-03)' },
+  )
   endDate: string;
 
   @ApiProperty({

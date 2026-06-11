@@ -1,4 +1,9 @@
-import { CanActivate, ExecutionContext, Injectable, ForbiddenException } from '@nestjs/common';
+import {
+  CanActivate,
+  ExecutionContext,
+  Injectable,
+  ForbiddenException,
+} from '@nestjs/common';
 import { UserRole } from 'generated/prisma/client';
 
 @Injectable()
@@ -8,7 +13,9 @@ export class ManagerGuard implements CanActivate {
     const user = request.user;
 
     if (!user || user.role !== UserRole.MANAGER) {
-      throw new ForbiddenException('Chỉ tài khoản MANAGER mới có quyền thực hiện hành động này');
+      throw new ForbiddenException(
+        'Chỉ tài khoản MANAGER mới có quyền thực hiện hành động này',
+      );
     }
     return true;
   }

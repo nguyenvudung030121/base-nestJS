@@ -57,13 +57,11 @@ export class SupabaseService {
   async uploadLeaveDocument(file: Express.Multer.File): Promise<string> {
     const ALLOWED_MIMETYPES = ['application/pdf', 'image/jpeg', 'image/png'];
     if (!ALLOWED_MIMETYPES.includes(file.mimetype)) {
-      throw new BadRequestException(
-        'Chỉ chấp nhận file PDF, JPG hoặc PNG',
-      );
+      throw new BadRequestException('Chỉ chấp nhận file PDF, JPG hoặc PNG');
     }
 
     const extension = extname(file.originalname);
-    const fileName  = `${Date.now()}-${Math.round(Math.random() * 1e9)}${extension}`;
+    const fileName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${extension}`;
 
     const { error } = await this.getClient()
       .storage.from('leave-document')

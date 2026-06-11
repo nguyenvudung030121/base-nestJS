@@ -23,8 +23,7 @@ export class GetManagerRequestsDto extends PageOptionsDto {
   readonly department?: Department;
 
   @ApiPropertyOptional({
-    description:
-      'Ngày bắt đầu khoảng lọc (ISO date). Mặc định: ngày hiện tại',
+    description: 'Ngày bắt đầu khoảng lọc (ISO date). Mặc định: ngày hiện tại',
     example: '2026-06-10',
   })
   @IsDateString()
@@ -32,8 +31,7 @@ export class GetManagerRequestsDto extends PageOptionsDto {
   readonly startDate?: string;
 
   @ApiPropertyOptional({
-    description:
-      'Ngày kết thúc khoảng lọc (ISO date). Mặc định: ngày hiện tại',
+    description: 'Ngày kết thúc khoảng lọc (ISO date). Mặc định: ngày hiện tại',
     example: '2026-06-10',
   })
   @IsDateString()

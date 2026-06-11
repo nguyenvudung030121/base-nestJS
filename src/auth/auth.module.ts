@@ -14,7 +14,7 @@ import { JwtAuthGuard } from './guards/jwt-auth/jwt-auth.guard';
       useFactory: (configService: ConfigService) => ({
         global: true,
         secret: configService.get<string>('JWT_SECRET'),
-        signOptions: { expiresIn: '3h' }, // Token sống được 3 tiếng
+        signOptions: { expiresIn: '1d' }, // Token sống được 1 ngày
       }),
     }),
   ],
