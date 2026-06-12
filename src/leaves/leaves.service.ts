@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
+  Department,
   LeaveStatus,
   LeaveType,
   Prisma,
@@ -303,6 +304,7 @@ export class LeavesService {
   ) {
     const request = await this.prisma.leaveRequest.findUnique({
       where: { id: requestId },
+      include: { user: true },
     });
 
     if (!request) {
@@ -312,6 +314,51 @@ export class LeavesService {
     if (request.status !== LeaveStatus.PENDING) {
       throw new BadRequestException(
         `Đơn này đã được xử lý (trạng thái hiện tại: ${request.status})`,
+      );
+    }
+
+    const approver = await this.prisma.user.findUnique({
+      where: { id: approverId },
+    });
+
+    if (!approver) {
+      throw new ForbiddenException('Người phê duyệt không hợp lệ');
+    }
+
+    // 1. Không thể tự duyệt đơn của chính mình
+    if (request.userId === approverId) {
+      throw new ForbiddenException('Bạn không thể tự duyệt đơn của chính mình');
+    }
+
+    // 2. Đơn của MANAGER chỉ có thể được duyệt bởi ADMIN hoặc MANAGER thuộc phòng HR
+    const isHRManager =
+      approver.role === UserRole.MANAGER &&
+      approver.department === Department.HR;
+    if (
+      request.user?.role === UserRole.MANAGER &&
+      approver.role !== UserRole.ADMIN &&
+      !isHRManager
+    ) {
+      throw new ForbiddenException(
+        'Đơn xin nghỉ của Quản lý chỉ có thể được phê duyệt bởi Admin hoặc Quản lý thuộc phòng ban HR',
+      );
+    }
+
+    // 3. Đơn của ADMIN chỉ có thể được duyệt bởi ADMIN khác
+    if (request.user?.role === UserRole.ADMIN && approver.role !== UserRole.ADMIN) {
+      throw new ForbiddenException(
+        'Đơn xin nghỉ của Admin chỉ có thể được phê duyệt bởi Admin khác',
+      );
+    }
+
+    // 4. Nếu là MANAGER (và không thuộc phòng ban HR) thì chỉ được duyệt đơn thuộc phòng ban của mình
+    if (
+      approver.role === UserRole.MANAGER &&
+      approver.department !== Department.HR &&
+      request.user?.department !== approver.department
+    ) {
+      throw new ForbiddenException(
+        'Quản lý chỉ có thể phê duyệt đơn xin nghỉ thuộc phòng ban của mình',
       );
     }
 
