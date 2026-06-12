@@ -4,7 +4,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { LeaveStatus, LeaveType, Prisma, UserRole } from '../../generated/prisma/client';
+import {
+  LeaveStatus,
+  LeaveType,
+  Prisma,
+  UserRole,
+} from '../../generated/prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
 import { GetManagerRequestsDto } from './dto/get-manager-requests.dto';
@@ -193,7 +198,7 @@ export class LeavesService {
     }
 
     const whereCondition = {
-      status: dto.status,
+      ...(dto.status && { status: dto.status }),
       startDate: { lte: rangeEnd },
       endDate: { gte: rangeStart },
       ...(dto.department && {
@@ -206,16 +211,7 @@ export class LeavesService {
         where: whereCondition,
         skip: dto.skip,
         take: dto.limit,
-        include: {
-          user: {
-            select: {
-              id: true,
-              fullName: true,
-              email: true,
-              department: true,
-            },
-          },
-        },
+        include: { user: true },
         orderBy: { createdAt: 'desc' },
       }),
       this.prisma.leaveRequest.count({

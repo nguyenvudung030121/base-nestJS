@@ -6,13 +6,12 @@ import { PageOptionsDto } from '../../common/pagination';
 export class GetManagerRequestsDto extends PageOptionsDto {
   @ApiPropertyOptional({
     description:
-      'Lọc theo trạng thái đơn. Mặc định: PENDING (đơn đang chờ duyệt)',
+      'Lọc theo trạng thái đơn. Nếu để trống sẽ trả về đơn ở tất cả trạng thái',
     enum: LeaveStatus,
-    default: LeaveStatus.PENDING,
   })
   @IsEnum(LeaveStatus)
   @IsOptional()
-  readonly status: LeaveStatus = LeaveStatus.PENDING;
+  readonly status?: LeaveStatus;
 
   @ApiPropertyOptional({
     description: 'Lọc theo phòng ban của nhân viên nộp đơn',

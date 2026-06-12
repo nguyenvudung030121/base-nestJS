@@ -5,12 +5,12 @@ import { PageOptionsDto } from '../../common/pagination';
 export class GetOfficeOverviewDto extends PageOptionsDto {
   @ApiPropertyOptional({
     description:
-      'Chế độ xem: week (tuần hiện tại) hoặc month (tháng hiện tại). Mặc định: week',
-    example: 'week',
+      'Chế độ xem: week (tuần hiện tại) hoặc month (tháng hiện tại). Mặc định: month',
+    example: 'month',
     enum: ['week', 'month'],
-    default: 'week',
+    default: 'month',
   })
   @IsIn(['week', 'month'])
   @IsOptional()
-  readonly mode: 'week' | 'month' = 'week';
+  readonly mode: 'week' | 'month' = 'month';
 }
