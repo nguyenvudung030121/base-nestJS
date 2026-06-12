@@ -155,7 +155,7 @@ export class LeavesService {
             },
           },
         },
-        orderBy: { startDate: 'asc' },
+        orderBy: { createdAt: 'desc' },
       }),
       this.prisma.leaveRequest.count({
         where: whereCondition,
