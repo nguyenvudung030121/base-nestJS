@@ -64,6 +64,12 @@ enum LeaveType {
   MEDICAL  // Nghỉ ốm
 }
 
+enum LeaveSlot {
+  FULL      // Cả ngày (mặc định)
+  MORNING   // Buổi sáng
+  AFTERNOON // Buổi chiều
+}
+
 // ==========================================
 // 2. DATABASE MODELS
 // ==========================================
@@ -183,6 +189,7 @@ model LeaveRequest {
   userId      String
   user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   leaveType   LeaveType
+  leaveSlot   LeaveSlot   @default(FULL)
   startDate   DateTime
   endDate     DateTime
   totalDays   Float

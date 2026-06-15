@@ -7,7 +7,7 @@ import {
   IsString,
   IsUrl,
 } from 'class-validator';
-import { LeaveType } from '../../../generated/prisma/client';
+import { LeaveSlot, LeaveType } from '../../../generated/prisma/client';
 
 export class CreateLeaveRequestDto {
   @ApiProperty({
@@ -55,4 +55,16 @@ export class CreateLeaveRequestDto {
   @IsOptional()
   @IsUrl({}, { message: 'documentUrl phải là một URL hợp lệ' })
   documentUrl?: string;
+
+  @ApiPropertyOptional({
+    enum: LeaveSlot,
+    description:
+      'Buổi nghỉ: FULL (cả ngày, mặc định), MORNING (sáng), AFTERNOON (chiều). Nếu chọn MORNING/AFTERNOON thì startDate và endDate phải là cùng 1 ngày.',
+    example: LeaveSlot.FULL,
+  })
+  @IsOptional()
+  @IsEnum(LeaveSlot, {
+    message: `leaveSlot phải là một trong: ${Object.values(LeaveSlot).join(', ')}`,
+  })
+  leaveSlot?: LeaveSlot;
 }

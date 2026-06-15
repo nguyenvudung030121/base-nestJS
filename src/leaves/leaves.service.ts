@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import {
   Department,
+  LeaveSlot,
   LeaveStatus,
   LeaveType,
   Prisma,
@@ -33,7 +34,37 @@ export class LeavesService {
 
     this.validateDates(start, end);
 
-    const totalDays = this.calculateWorkingDays(start, end);
+    const isHalfDay =
+      dto.leaveSlot === LeaveSlot.MORNING ||
+      dto.leaveSlot === LeaveSlot.AFTERNOON;
+
+    let totalDays: number;
+
+    if (isHalfDay) {
+      // Nghỉ nửa ngày: startDate và endDate phải trùng nhau (chỉ 1 ngày)
+      const startDay = new Date(start);
+      startDay.setHours(0, 0, 0, 0);
+      const endDay = new Date(end);
+      endDay.setHours(0, 0, 0, 0);
+
+      if (startDay.getTime() !== endDay.getTime()) {
+        throw new BadRequestException(
+          'Nghỉ nửa ngày thì ngày bắt đầu và ngày kết thúc phải trùng nhau',
+        );
+      }
+
+      // Vẫn phải kiểm tra ngày đó có rơi vào Thứ 7/CN không
+      const day = startDay.getDay();
+      if (day === 0 || day === 6) {
+        throw new BadRequestException(
+          'Không thể đăng ký nghỉ nửa ngày vào Thứ 7 hoặc Chủ Nhật',
+        );
+      }
+
+      totalDays = 0.5;
+    } else {
+      totalDays = this.calculateWorkingDays(start, end);
+    }
 
     // Transaction: kiểm tra quỹ phép + trừ tạm (giữ chỗ) ngay khi tạo đơn (PENDING)
     return this.prisma.$transaction(async (tx) => {
@@ -49,6 +80,7 @@ export class LeavesService {
         data: {
           userId,
           leaveType: dto.leaveType,
+          leaveSlot: dto.leaveSlot ?? LeaveSlot.FULL,
           startDate: start,
           endDate: end,
           totalDays,
@@ -90,6 +122,16 @@ export class LeavesService {
         where: whereCondition,
         skip: dto.skip,
         take: dto.limit,
+        include: {
+          approvedBy: {
+            select: {
+              id: true,
+              fullName: true,
+              avatarUrl: true,
+              department: true,
+            },
+          },
+        },
         orderBy: { createdAt: 'desc' },
       }),
       this.prisma.leaveRequest.count({
@@ -148,6 +190,14 @@ export class LeavesService {
         take: dto.limit,
         include: {
           user: {
+            select: {
+              id: true,
+              fullName: true,
+              avatarUrl: true,
+              department: true,
+            },
+          },
+          approvedBy: {
             select: {
               id: true,
               fullName: true,
