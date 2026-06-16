@@ -93,9 +93,11 @@ model User {
   mentions  CommentMention[]
 
   // Relations - e-Leave
-  leaveBalances  LeaveBalance[]
-  leaveRequests  LeaveRequest[]
-  approvedLeaves LeaveRequest[] @relation("ApprovedRequests")
+  leaveBalances   LeaveBalance[]
+  leaveRequests   LeaveRequest[]
+  approvedLeaves  LeaveRequest[] @relation("ApprovedRequests")
+  rejectedLeaves  LeaveRequest[] @relation("RejectedRequests")
+  cancelledLeaves LeaveRequest[] @relation("CancelledRequests")
 
   createdAt DateTime @default(now())
 
@@ -198,6 +200,10 @@ model LeaveRequest {
   status      LeaveStatus @default(PENDING)
   approvedById String?
   approvedBy   User?       @relation("ApprovedRequests", fields: [approvedById], references: [id])
+  rejectedById String?
+  rejectedBy   User?       @relation("RejectedRequests", fields: [rejectedById], references: [id])
+  cancelledById String?
+  cancelledBy   User?       @relation("CancelledRequests", fields: [cancelledById], references: [id])
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 

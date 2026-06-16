@@ -131,6 +131,22 @@ export class LeavesService {
               department: true,
             },
           },
+          rejectedBy: {
+            select: {
+              id: true,
+              fullName: true,
+              avatarUrl: true,
+              department: true,
+            },
+          },
+          cancelledBy: {
+            select: {
+              id: true,
+              fullName: true,
+              avatarUrl: true,
+              department: true,
+            },
+          },
         },
         orderBy: { createdAt: 'desc' },
       }),
@@ -205,6 +221,22 @@ export class LeavesService {
               department: true,
             },
           },
+          rejectedBy: {
+            select: {
+              id: true,
+              fullName: true,
+              avatarUrl: true,
+              department: true,
+            },
+          },
+          cancelledBy: {
+            select: {
+              id: true,
+              fullName: true,
+              avatarUrl: true,
+              department: true,
+            },
+          },
         },
         orderBy: { createdAt: 'desc' },
       }),
@@ -262,7 +294,33 @@ export class LeavesService {
         where: whereCondition,
         skip: dto.skip,
         take: dto.limit,
-        include: { user: true },
+        include: {
+          user: true,
+          approvedBy: {
+            select: {
+              id: true,
+              fullName: true,
+              avatarUrl: true,
+              department: true,
+            },
+          },
+          rejectedBy: {
+            select: {
+              id: true,
+              fullName: true,
+              avatarUrl: true,
+              department: true,
+            },
+          },
+          cancelledBy: {
+            select: {
+              id: true,
+              fullName: true,
+              avatarUrl: true,
+              department: true,
+            },
+          },
+        },
         orderBy: { createdAt: 'desc' },
       }),
       this.prisma.leaveRequest.count({
@@ -338,7 +396,7 @@ export class LeavesService {
 
       return tx.leaveRequest.update({
         where: { id: requestId },
-        data: { status: LeaveStatus.CANCELLED },
+        data: { status: LeaveStatus.CANCELLED, cancelledById: userId },
       });
     });
   }
@@ -430,7 +488,8 @@ export class LeavesService {
         where: { id: requestId },
         data: {
           status: dto.status,
-          approvedById: approverId,
+          ...(dto.status === LeaveStatus.APPROVED && { approvedById: approverId }),
+          ...(dto.status === LeaveStatus.REJECTED && { rejectedById: approverId }),
         },
       });
     });
