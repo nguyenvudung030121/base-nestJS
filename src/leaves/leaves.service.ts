@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import {
   Department,
   LeaveSlot,
@@ -22,7 +23,10 @@ import { PageDto, PageMetaDto } from '../common/pagination';
 
 @Injectable()
 export class LeavesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly eventEmitter: EventEmitter2,
+  ) {}
 
   // ----------------------------------------------------------------
   // 1. TẠO ĐƠN XIN NGHỈ
@@ -385,7 +389,7 @@ export class LeavesService {
     }
 
     // Transaction: hủy đơn + hoàn trả quỹ phép đã giữ chỗ (PENDING hoặc APPROVED đều đã trừ quỹ)
-    return this.prisma.$transaction(async (tx) => {
+    const cancelledRequest = await this.prisma.$transaction(async (tx) => {
       await this.releaseLeaveBalance(
         tx,
         request.userId,
@@ -399,6 +403,19 @@ export class LeavesService {
         data: { status: LeaveStatus.CANCELLED, cancelledById: userId },
       });
     });
+
+    // Chỉ thông báo nếu đơn bị HỦY BỞI NGƯỜI KHÁC (manager/admin hủy thay)
+    if (cancelledRequest.userId !== userId) {
+      this.eventEmitter.emit('leave.status.changed', {
+        requestId: cancelledRequest.id,
+        userId: cancelledRequest.userId,
+        status: cancelledRequest.status, // CANCELLED
+        leaveType: cancelledRequest.leaveType,
+        totalDays: cancelledRequest.totalDays,
+      });
+    }
+
+    return cancelledRequest;
   }
 
   // ----------------------------------------------------------------
@@ -473,7 +490,7 @@ export class LeavesService {
     // Quỹ phép đã được trừ (giữ chỗ) ngay khi tạo đơn (PENDING).
     // - APPROVED: giữ nguyên phần đã trừ, không cần thao tác thêm.
     // - REJECTED: hoàn trả lại số ngày đã giữ chỗ.
-    return this.prisma.$transaction(async (tx) => {
+    const updatedRequest = await this.prisma.$transaction(async (tx) => {
       if (dto.status === LeaveStatus.REJECTED) {
         await this.releaseLeaveBalance(
           tx,
@@ -493,6 +510,17 @@ export class LeavesService {
         },
       });
     });
+
+    // Bắn sự kiện ngầm để gửi thông báo (FCM) cho nhân viên nộp đơn
+    this.eventEmitter.emit('leave.status.changed', {
+      requestId: updatedRequest.id,
+      userId: updatedRequest.userId, // ID của nhân viên nộp đơn để lấy fcmToken
+      status: updatedRequest.status, // APPROVED hoặc REJECTED
+      leaveType: updatedRequest.leaveType,
+      totalDays: updatedRequest.totalDays,
+    });
+
+    return updatedRequest;
   }
 
   // ----------------------------------------------------------------

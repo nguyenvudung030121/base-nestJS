@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { CacheModule } from '@nestjs/cache-manager';
 import { ConfigModule } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
@@ -27,6 +28,7 @@ const envFilePath =
   imports: [
     CacheModule.register({ isGlobal: true, ttl: 10000 }),
     ConfigModule.forRoot({ isGlobal: true, envFilePath }),
+    EventEmitterModule.forRoot(),
     ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 10 }]),
     InvoicesModule,
