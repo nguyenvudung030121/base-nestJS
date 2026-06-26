@@ -32,7 +32,10 @@ export class FirebaseService implements OnModuleInit {
     let serviceAccount: admin.ServiceAccount;
 
     // 1. Thử đọc trực tiếp JSON credentials từ biến môi trường hệ thống
-    const credentialsEnv = this.configService.get<string>('FIREBASE_CREDENTIALS');
+    const credentialsEnv = process.env.FIREBASE_CREDENTIALS || this.configService.get<string>('FIREBASE_CREDENTIALS');
+    
+    this.logger.log(`[Firebase] Checking FIREBASE_CREDENTIALS env: ${credentialsEnv ? 'FOUND' : 'NOT FOUND'}`);
+
     if (credentialsEnv) {
       try {
         serviceAccount = JSON.parse(credentialsEnv) as admin.ServiceAccount;
