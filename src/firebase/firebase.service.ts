@@ -25,20 +25,39 @@ export class FirebaseService implements OnModuleInit {
   ) {}
 
   onModuleInit(): void {
-    const keyFile = this.configService.get<string>('FIREBASE_KEY_PATH');
-
-    if (!keyFile) {
-      throw new Error('Missing FIREBASE_KEY_PATH environment variable.');
-    }
-
     if (admin.apps.length > 0) {
       return;
     }
 
-    const keyPath = path.join(process.cwd(), keyFile);
-    const serviceAccount = JSON.parse(
-      fs.readFileSync(keyPath, 'utf8'),
-    ) as admin.ServiceAccount;
+    let serviceAccount: admin.ServiceAccount;
+
+    // 1. Thử đọc trực tiếp JSON credentials từ biến môi trường hệ thống
+    const credentialsEnv = this.configService.get<string>('FIREBASE_CREDENTIALS');
+    if (credentialsEnv) {
+      try {
+        serviceAccount = JSON.parse(credentialsEnv) as admin.ServiceAccount;
+        this.logger.log('Firebase initialized successfully using FIREBASE_CREDENTIALS env variable.');
+      } catch (error) {
+        this.logger.error('Failed to parse FIREBASE_CREDENTIALS environment variable.', error);
+        throw error;
+      }
+    } else {
+      // 2. Fallback: đọc file local từ đường dẫn FIREBASE_KEY_PATH
+      const keyFile = this.configService.get<string>('FIREBASE_KEY_PATH');
+      if (!keyFile) {
+        throw new Error('Missing FIREBASE_CREDENTIALS or FIREBASE_KEY_PATH environment variable.');
+      }
+
+      const keyPath = path.join(process.cwd(), keyFile);
+      if (!fs.existsSync(keyPath)) {
+        throw new Error(`Firebase key file not found at path: ${keyPath}`);
+      }
+
+      serviceAccount = JSON.parse(
+        fs.readFileSync(keyPath, 'utf8'),
+      ) as admin.ServiceAccount;
+      this.logger.log(`Firebase initialized successfully using local key file: ${keyFile}`);
+    }
 
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),

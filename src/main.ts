@@ -35,6 +35,10 @@ async function bootstrap() {
   });
 
   // 5. Khởi chạy Server
-  await app.listen(configService.get<number>('PORT') || 3000);
+  const port = process.env.PORT || configService.get('PORT') || 3000;
+  await app.listen(port, '0.0.0.0');
+  console.log(
+    `[Bootstrap] Server is listening on port ${port} in "${process.env.NODE_ENV || 'development'}" mode`,
+  );
 }
 bootstrap();
